@@ -1,0 +1,659 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../config/theme.dart';
+import '../../models/product.dart';
+import '../../models/product_variant.dart';
+import '../../services/cart_service.dart';
+import '../../services/product_service.dart';
+import 'cart_screen.dart';
+
+class ProductDetailScreen extends StatefulWidget {
+  final String productId;
+
+  const ProductDetailScreen({super.key, required this.productId});
+
+  @override
+  State<ProductDetailScreen> createState() => _ProductDetailScreenState();
+}
+
+class _ProductDetailScreenState extends State<ProductDetailScreen> {
+  Product? _product;
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  String? _selectedSize;
+  String? _selectedColor;
+  int _quantity = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProduct();
+  }
+
+  Future<void> _loadProduct() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final service = context.read<ProductService>();
+      final prod = await service.getProductById(widget.productId);
+      if (mounted) {
+        setState(() {
+          _product = prod;
+          _isLoading = false;
+          if (prod != null && prod.variantes.isNotEmpty) {
+            _selectedSize = prod.variantes.first.talla;
+            _selectedColor = prod.variantes.first.color;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Error al cargar detalle: ${e.toString()}';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  List<String> get _availableSizes {
+    if (_product == null) return [];
+    final sizes = _product!.variantes.map((v) => v.talla).toSet().toList();
+    sizes.sort();
+    return sizes;
+  }
+
+  List<String> get _availableColorsForSize {
+    if (_product == null) return [];
+    if (_selectedSize == null) {
+      return _product!.variantes.map((v) => v.color).toSet().toList();
+    }
+    return _product!.variantes
+        .where((v) => v.talla == _selectedSize)
+        .map((v) => v.color)
+        .toSet()
+        .toList();
+  }
+
+  ProductVariant? get _selectedVariant {
+    if (_product == null || _product!.variantes.isEmpty) return null;
+    try {
+      return _product!.variantes.firstWhere(
+        (v) => v.talla == _selectedSize && v.color == _selectedColor,
+      );
+    } catch (_) {
+      // Fallback
+      return _product!.variantes.first;
+    }
+  }
+
+  double get _currentUnitPrice {
+    if (_product == null) return 0.0;
+    final variant = _selectedVariant;
+    return _product!.precioBase + (variant?.precioAdicional ?? 0.0);
+  }
+
+  void _handleAddToCart() {
+    final variant = _selectedVariant;
+    if (_product == null || variant == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Por favor selecciona una talla y un color válidos'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
+
+    final cart = context.read<CartService>();
+    cart.addItem(_product!, variant, quantity: _quantity);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: AppTheme.successColor,
+        behavior: SnackBarBehavior.floating,
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '¡${_product!.nombre} añadido al carrito!',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        action: SnackBarAction(
+          label: 'VER CARRITO',
+          textColor: Colors.white,
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CartScreen()),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = AppTheme.getBg(context);
+    final cardBg = AppTheme.getCardBg(context);
+    final textPrimary = AppTheme.getTextPrimary(context);
+    final textSecondary = AppTheme.getTextSecondary(context);
+    final accent = AppTheme.getAccent(context);
+    final border = AppTheme.getBorder(context);
+    final cart = context.watch<CartService>();
+
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: bg,
+        appBar: AppBar(backgroundColor: cardBg, elevation: 0),
+        body: Center(
+          child: CircularProgressIndicator(color: accent),
+        ),
+      );
+    }
+
+    if (_errorMessage != null || _product == null) {
+      return Scaffold(
+        backgroundColor: bg,
+        appBar: AppBar(backgroundColor: cardBg, elevation: 0),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: AppTheme.errorColor),
+              const SizedBox(height: 16),
+              Text(
+                _errorMessage ?? 'Producto no encontrado',
+                style: TextStyle(color: textSecondary),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final product = _product!;
+    final variant = _selectedVariant;
+
+    return Scaffold(
+      backgroundColor: bg,
+      body: CustomScrollView(
+        slivers: [
+          // Sliver App Bar con Imagen
+          SliverAppBar(
+            expandedHeight: 300,
+            pinned: true,
+            backgroundColor: cardBg,
+            elevation: 0,
+            leading: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: CircleAvatar(
+                backgroundColor: cardBg.withValues(alpha: 0.9),
+                child: IconButton(
+                  icon: Icon(Icons.arrow_back, color: textPrimary),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+            ),
+            actions: [
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: CircleAvatar(
+                  backgroundColor: cardBg.withValues(alpha: 0.9),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.shopping_bag_outlined),
+                        color: textPrimary,
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const CartScreen()),
+                          );
+                        },
+                      ),
+                      if (cart.totalItemCount > 0)
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: const BoxDecoration(
+                              color: AppTheme.accentColor,
+                              shape: BoxShape.circle,
+                            ),
+                            constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                            child: Center(
+                              child: Text(
+                                '${cart.totalItemCount}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            flexibleSpace: FlexibleSpaceBar(
+              background: Container(
+                color: accent.withValues(alpha: 0.08),
+                child: product.imagenUrl != null && product.imagenUrl!.isNotEmpty
+                    ? Image.network(
+                        product.imagenUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (ctx, err, stack) => _buildPlaceholder(),
+                      )
+                    : _buildPlaceholder(),
+              ),
+            ),
+          ),
+
+          // Cuerpo de la pantalla
+          SliverToBoxAdapter(
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Badges: Categoría y Temporada
+                  Row(
+                    children: [
+                      if (product.categoriaNombre != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: accent.withValues(alpha: 0.3)),
+                          ),
+                          child: Text(
+                            product.categoriaNombre!.toUpperCase(),
+                            style: TextStyle(
+                              color: accent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      if (product.temporada != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: cardBg,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: border),
+                          ),
+                          child: Text(
+                            product.temporada!,
+                            style: TextStyle(
+                              color: textSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Nombre del producto
+                  Text(
+                    product.nombre,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: textPrimary,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Precio
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        'Bs. ${_currentUnitPrice.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          color: accent,
+                        ),
+                      ),
+                      if (variant != null && variant.precioAdicional > 0) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          '(+Bs. ${variant.precioAdicional.toStringAsFixed(2)} por talla)',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: textSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // SKU Identificador
+                  if (variant != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: cardBg,
+                        borderRadius: BorderRadius.circular(AppTheme.borderRadiusSmall),
+                        border: Border.all(color: border),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.qr_code_2_rounded, size: 18, color: textSecondary),
+                          const SizedBox(width: 6),
+                          Text(
+                            'SKU: ${variant.codigoSku}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 20),
+
+                  // Descripción
+                  if (product.descripcion != null && product.descripcion!.isNotEmpty) ...[
+                    Text(
+                      'Descripción',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      product.descripcion!,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: textSecondary,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // Selector de Tallas
+                  if (_availableSizes.isNotEmpty) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Talla',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: textPrimary,
+                          ),
+                        ),
+                        Text(
+                          'Seleccionada: ${_selectedSize ?? ""}',
+                          style: TextStyle(fontSize: 13, color: accent, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: _availableSizes.map((size) {
+                        final isSelected = _selectedSize == size;
+                        return ChoiceChip(
+                          label: Text(size),
+                          selected: isSelected,
+                          selectedColor: accent,
+                          backgroundColor: cardBg,
+                          labelStyle: TextStyle(
+                            color: isSelected ? Colors.white : textPrimary,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: isSelected ? accent : border,
+                            ),
+                          ),
+                          onSelected: (selected) {
+                            if (selected) {
+                              setState(() {
+                                _selectedSize = size;
+                                final validColors = _availableColorsForSize;
+                                if (!validColors.contains(_selectedColor) && validColors.isNotEmpty) {
+                                  _selectedColor = validColors.first;
+                                }
+                              });
+                            }
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+
+                  // Selector de Colores
+                  if (_availableColorsForSize.isNotEmpty) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Color',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: textPrimary,
+                          ),
+                        ),
+                        Text(
+                          'Seleccionado: ${_selectedColor ?? ""}',
+                          style: TextStyle(fontSize: 13, color: accent, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: _availableColorsForSize.map((color) {
+                        final isSelected = _selectedColor == color;
+                        return ChoiceChip(
+                          label: Text(color),
+                          selected: isSelected,
+                          selectedColor: accent,
+                          backgroundColor: cardBg,
+                          labelStyle: TextStyle(
+                            color: isSelected ? Colors.white : textPrimary,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: isSelected ? accent : border,
+                            ),
+                          ),
+                          onSelected: (selected) {
+                            if (selected) {
+                              setState(() {
+                                _selectedColor = color;
+                              });
+                            }
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // Cantidad
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Cantidad',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: textPrimary,
+                        ),
+                      ),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: cardBg,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: border),
+                        ),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.remove, size: 18),
+                              color: textPrimary,
+                              onPressed: _quantity > 1
+                                  ? () => setState(() => _quantity--)
+                                  : null,
+                            ),
+                            Text(
+                              '$_quantity',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: textPrimary,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add, size: 18),
+                              color: textPrimary,
+                              onPressed: _quantity < 3
+                                  ? () => setState(() => _quantity++)
+                                  : () {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Máximo 3 unidades por prenda'),
+                                          duration: Duration(seconds: 1),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                    },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+
+      // Barra inferior con Total y Botón de Añadir al Carrito
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        decoration: BoxDecoration(
+          color: cardBg,
+          border: Border(top: BorderSide(color: border)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -3),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Total a pagar',
+                      style: TextStyle(fontSize: 11, color: textSecondary),
+                    ),
+                    Text(
+                      'Bs. ${(_currentUnitPrice * _quantity).toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: ElevatedButton.icon(
+                  onPressed: _handleAddToCart,
+                  icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
+                  label: const Text(
+                    'Añadir al Carrito',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: accent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaceholder() {
+    return Center(
+      child: Icon(
+        Icons.checkroom_rounded,
+        size: 90,
+        color: AppTheme.accentColor.withValues(alpha: 0.4),
+      ),
+    );
+  }
+}
