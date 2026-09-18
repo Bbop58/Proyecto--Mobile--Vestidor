@@ -5,8 +5,8 @@ class ApiConfig {
   // o compilar con: flutter build apk --release --dart-define=API_URL=https://tu-backend.up.railway.app
   static const String _envUrl = String.fromEnvironment('API_URL', defaultValue: '');
 
-  // URL de producción por defecto si no se pasa por --dart-define (dejar vacía para modo local automático)
-  static const String productionUrl = '';
+  // URL de producción por defecto
+  static const String productionUrl = 'https://backend-production-d7d5d.up.railway.app';
 
   static String get baseUrl {
     if (_envUrl.isNotEmpty) return _envUrl;
