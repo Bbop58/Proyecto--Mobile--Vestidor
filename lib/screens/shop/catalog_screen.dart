@@ -6,8 +6,10 @@ import '../../models/product.dart';
 import '../../services/cart_service.dart';
 import '../../services/category_service.dart';
 import '../../services/product_service.dart';
+import '../../services/season_service.dart';
 import 'cart_screen.dart';
 import 'product_detail_screen.dart';
+import 'virtual_fitting_screen.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({super.key});
@@ -19,8 +21,10 @@ class CatalogScreen extends StatefulWidget {
 class _CatalogScreenState extends State<CatalogScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<Category> _categories = [];
+  List<Season> _seasons = [];
   List<Product> _products = [];
   String? _selectedCategoryId;
+  String? _selectedSeasonId;
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -44,11 +48,22 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
     try {
       final catService = context.read<CategoryService>();
+      final seasonService = context.read<SeasonService>();
       final prodService = context.read<ProductService>();
 
       final categories = await catService.getCategories();
+      final seasons = await seasonService.getSeasons();
+
+      // Obtener el nombre de temporada seleccionada para el filtro
+      String? selectedSeasonName;
+      if (_selectedSeasonId != null) {
+        final found = seasons.where((s) => s.id == _selectedSeasonId);
+        if (found.isNotEmpty) selectedSeasonName = found.first.nombre;
+      }
+
       final products = await prodService.getProducts(
         categoriaId: _selectedCategoryId,
+        temporada: selectedSeasonName,
         search: _searchController.text.trim().isNotEmpty
             ? _searchController.text.trim()
             : null,
@@ -57,6 +72,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       if (mounted) {
         setState(() {
           _categories = categories;
+          _seasons = seasons;
           _products = products;
           _isLoading = false;
         });
@@ -74,6 +90,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
   void _onCategorySelected(String? categoryId) {
     setState(() {
       _selectedCategoryId = categoryId;
+    });
+    _loadData();
+  }
+
+  void _onSeasonSelected(String? seasonId) {
+    setState(() {
+      _selectedSeasonId = seasonId;
     });
     _loadData();
   }
@@ -216,7 +239,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             // Filtro horizontal de categorías
             Container(
               height: 44,
-              margin: const EdgeInsets.only(bottom: 8),
+              margin: const EdgeInsets.only(bottom: 4),
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -236,6 +259,62 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 ],
               ),
             ),
+
+            // Filtro horizontal de temporadas
+            if (_seasons.isNotEmpty)
+              Container(
+                height: 40,
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: [
+                    _buildSeasonChip(
+                      label: 'Todas temporadas',
+                      isSelected: _selectedSeasonId == null,
+                      onTap: () => _onSeasonSelected(null),
+                    ),
+                    ..._seasons.map(
+                      (s) => _buildSeasonChip(
+                        label: s.nombre,
+                        isSelected: _selectedSeasonId == s.id,
+                        onTap: () => _onSeasonSelected(s.id),
+                      ),
+                    ),
+                    // Botón acceso rápido al vestidor virtual
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: InkWell(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const VirtualFittingScreen()),
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.getCardBg(context),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: AppTheme.getBorder(context)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.straighten_rounded,
+                                  size: 14, color: AppTheme.getTextSecondary(context)),
+                              const SizedBox(width: 4),
+                              Text('Guía de tallas',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.getTextSecondary(context),
+                                      fontWeight: FontWeight.w500)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             // Contenido: Lista / Grid de Productos
             Expanded(
@@ -322,7 +401,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }) {
     final accent = AppTheme.getAccent(context);
     final cardBg = AppTheme.getCardBg(context);
-    final textPrimary = AppTheme.getTextPrimary(context);
     final textSecondary = AppTheme.getTextSecondary(context);
     final border = AppTheme.getBorder(context);
 
@@ -338,9 +416,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             decoration: BoxDecoration(
               color: isSelected ? accent : cardBg,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: isSelected ? accent : border,
-              ),
+              border: Border.all(color: isSelected ? accent : border),
               boxShadow: isSelected
                   ? [
                       BoxShadow(
@@ -357,9 +433,68 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  color: isSelected ? Colors.white : (isSelected ? textPrimary : textSecondary),
+                  color: isSelected ? Colors.white : textSecondary,
                 ),
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSeasonChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final cardBg = AppTheme.getCardBg(context);
+    final textSecondary = AppTheme.getTextSecondary(context);
+    final border = AppTheme.getBorder(context);
+    final seasonColor = const Color(0xFF7C3AED); // Violet para temporadas
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: isSelected ? seasonColor : cardBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                  color: isSelected ? seasonColor : border.withValues(alpha: 0.5)),
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: seasonColor.withValues(alpha: 0.3),
+                        blurRadius: 5,
+                        offset: const Offset(0, 2),
+                      )
+                    ]
+                  : null,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.calendar_month_rounded,
+                  size: 12,
+                  color: isSelected ? Colors.white : textSecondary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    color: isSelected ? Colors.white : textSecondary,
+                  ),
+                ),
+              ],
             ),
           ),
         ),

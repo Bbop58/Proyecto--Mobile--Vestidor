@@ -4,8 +4,10 @@ import '../../config/theme.dart';
 import '../../models/product.dart';
 import '../../models/product_variant.dart';
 import '../../services/cart_service.dart';
+import '../../services/inventory_service.dart';
 import '../../services/product_service.dart';
 import 'cart_screen.dart';
+import 'virtual_fitting_screen.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final String productId;
@@ -24,6 +26,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   String? _selectedSize;
   String? _selectedColor;
   int _quantity = 1;
+
+  // Disponibilidad por sucursal
+  List<InventoryAvailability> _availability = [];
+  bool _loadingAvailability = false;
+  String? _lastVarianteId;
 
   @override
   void initState() {
@@ -49,6 +56,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             _selectedColor = prod.variantes.first.color;
           }
         });
+        // Load availability for first variant
+        _loadAvailability();
       }
     } catch (e) {
       if (mounted) {
@@ -57,6 +66,33 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _loadAvailability() async {
+    if (_product == null) return;
+    // Use a cache key based on product + talla + color
+    final cacheKey = '${_product!.id}:$_selectedSize:$_selectedColor';
+    if (cacheKey == _lastVarianteId) return;
+    setState(() {
+      _loadingAvailability = true;
+      _lastVarianteId = cacheKey;
+    });
+    try {
+      final invService = context.read<InventoryService>();
+      final list = await invService.getProductAvailability(
+        productoId: _product!.id,
+        talla: _selectedSize,
+        color: _selectedColor,
+      );
+      if (mounted) {
+        setState(() {
+          _availability = list;
+          _loadingAvailability = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingAvailability = false);
     }
   }
 
@@ -414,13 +450,45 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Talla',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: textPrimary,
-                          ),
+                        Row(
+                          children: [
+                            Text(
+                              'Talla',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: textPrimary,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const VirtualFittingScreen(),
+                                ),
+                              ),
+                              borderRadius: BorderRadius.circular(4),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.accessibility_new_rounded, size: 14, color: accent),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Guía de Tallas',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: accent,
+                                        fontWeight: FontWeight.w600,
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         Text(
                           'Seleccionada: ${_selectedSize ?? ""}',
@@ -458,6 +526,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                   _selectedColor = validColors.first;
                                 }
                               });
+                              _loadAvailability();
                             }
                           },
                         );
@@ -511,6 +580,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                               setState(() {
                                 _selectedColor = color;
                               });
+                              _loadAvailability();
                             }
                           },
                         );
@@ -518,6 +588,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ),
                     const SizedBox(height: 24),
                   ],
+
+                  // Disponibilidad por Sucursal
+                  _buildAvailabilitySection(context),
+                  const SizedBox(height: 24),
 
                   // Cantidad
                   Row(
@@ -654,6 +728,131 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         size: 90,
         color: AppTheme.accentColor.withValues(alpha: 0.4),
       ),
+    );
+  }
+
+  Widget _buildAvailabilitySection(BuildContext context) {
+    final cardBg = AppTheme.getCardBg(context);
+    final textPrimary = AppTheme.getTextPrimary(context);
+    final textSecondary = AppTheme.getTextSecondary(context);
+    final accent = AppTheme.getAccent(context);
+    final border = AppTheme.getBorder(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Disponibilidad por sucursal',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: textPrimary),
+            ),
+            if (_loadingAvailability)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentColor),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (!_loadingAvailability && _availability.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+              border: Border.all(color: border),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, size: 16, color: textSecondary),
+                const SizedBox(width: 8),
+                Text(
+                  'Selecciona talla y color para ver disponibilidad',
+                  style: TextStyle(fontSize: 12, color: textSecondary),
+                ),
+              ],
+            ),
+          )
+        else if (!_loadingAvailability)
+          Container(
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+              border: Border.all(color: border),
+            ),
+            child: Column(
+              children: _availability.asMap().entries.map((entry) {
+                final i = entry.key;
+                final avail = entry.value;
+                final hasStock = avail.stockDisponible > 0;
+                return Column(
+                  children: [
+                    if (i > 0) Divider(color: border, height: 1),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: hasStock ? AppTheme.successColor : AppTheme.errorColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  avail.sucursalNombre,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: textPrimary,
+                                  ),
+                                ),
+                                if (avail.ciudad != null)
+                                  Text(
+                                    avail.ciudad!,
+                                    style: TextStyle(fontSize: 11, color: textSecondary),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                hasStock ? '${avail.stockDisponible} disp.' : 'Agotado',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: hasStock ? AppTheme.successColor : AppTheme.errorColor,
+                                ),
+                              ),
+                              if (avail.stockReservado > 0)
+                                Text(
+                                  '${avail.stockReservado} reservado',
+                                  style: TextStyle(fontSize: 10, color: accent),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+        const SizedBox(height: 24),
+      ],
     );
   }
 }

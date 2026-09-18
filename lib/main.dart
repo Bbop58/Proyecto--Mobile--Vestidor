@@ -4,19 +4,26 @@ import 'config/routes.dart';
 import 'config/theme.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
+import 'screens/home/branches_public_screen.dart';
+import 'screens/home/purchase_history_screen.dart';
 import 'screens/main_navigation_screen.dart';
 import 'screens/shop/cart_screen.dart';
 import 'screens/shop/catalog_screen.dart';
+import 'screens/shop/virtual_fitting_screen.dart';
 import 'screens/reservations/reservations_screen.dart';
 import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'services/branch_service.dart';
 import 'services/cart_service.dart';
 import 'services/category_service.dart';
+import 'services/inventory_service.dart';
 import 'services/product_service.dart';
 import 'services/reservation_service.dart';
+import 'services/sale_service.dart';
+import 'services/season_service.dart';
 import 'services/storage_service.dart';
 import 'services/theme_service.dart';
+import 'services/paypal_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -62,6 +69,18 @@ class MyApp extends StatelessWidget {
         ProxyProvider<ApiService, ReservationService>(
           update: (_, api, _) => ReservationService(api),
         ),
+        ProxyProvider<ApiService, SeasonService>(
+          update: (_, api, _) => SeasonService(api),
+        ),
+        ProxyProvider<ApiService, InventoryService>(
+          update: (_, api, _) => InventoryService(api),
+        ),
+        ProxyProvider<ApiService, SaleService>(
+          update: (_, api, _) => SaleService(api),
+        ),
+        ProxyProvider<ApiService, PayPalService>(
+          update: (_, api, _) => PayPalService(api),
+        ),
         ChangeNotifierProvider<CartService>(
           create: (_) => CartService(),
         ),
@@ -82,6 +101,9 @@ class MyApp extends StatelessWidget {
               AppRoutes.catalog: (context) => const CatalogScreen(),
               AppRoutes.cart: (context) => const CartScreen(),
               AppRoutes.reservations: (context) => const ReservationsScreen(),
+              AppRoutes.purchases: (context) => const PurchaseHistoryScreen(),
+              AppRoutes.branches: (context) => const BranchesPublicScreen(),
+              AppRoutes.virtualFitting: (context) => const VirtualFittingScreen(),
             },
           );
         },

@@ -4,6 +4,9 @@ import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../services/auth_service.dart';
 import '../../services/theme_service.dart';
+import 'branches_public_screen.dart';
+import 'purchase_history_screen.dart';
+import '../shop/virtual_fitting_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -354,6 +357,47 @@ class _HomeScreenState extends State<HomeScreen>
                         decoration: AppTheme.cardDecorationOf(context),
                         child: Column(
                           children: [
+                            _buildActionTile(
+                              context: context,
+                              icon: Icons.receipt_long_rounded,
+                              label: 'Mis Compras',
+                              subtitle: 'Historial de compras digitales',
+                              color: AppTheme.successColor,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const PurchaseHistoryScreen(),
+                                ),
+                              ),
+                            ),
+                            Divider(height: 1, indent: 56, color: border),
+                            _buildActionTile(
+                              context: context,
+                              icon: Icons.store_rounded,
+                              label: 'Nuestras Tiendas',
+                              subtitle: 'Sucursales y disponibilidad por ciudad',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const BranchesPublicScreen(),
+                                ),
+                              ),
+                            ),
+                            Divider(height: 1, indent: 56, color: border),
+                            _buildActionTile(
+                              context: context,
+                              icon: Icons.accessibility_new_rounded,
+                              label: 'Vestidor Virtual & Guía de Tallas',
+                              subtitle: 'Calcula tu talla exacta según tus medidas',
+                              color: accent,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const VirtualFittingScreen(),
+                                ),
+                              ),
+                            ),
+                            Divider(height: 1, indent: 56, color: border),
                             _buildActionTile(
                               context: context,
                               icon: Icons.edit_outlined,

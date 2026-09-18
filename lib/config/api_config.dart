@@ -1,9 +1,17 @@
 import 'package:flutter/foundation.dart';
 
-/// Configuración de la API
 class ApiConfig {
-  // En Web o Windows Desktop usa 127.0.0.1 (IPv4), en Android emulador usa 10.0.2.2
+  // Para Producción: puedes cambiar esta URL por la de Railway,
+  // o compilar con: flutter build apk --release --dart-define=API_URL=https://tu-backend.up.railway.app
+  static const String _envUrl = String.fromEnvironment('API_URL', defaultValue: '');
+
+  // URL de producción por defecto si no se pasa por --dart-define (dejar vacía para modo local automático)
+  static const String productionUrl = '';
+
   static String get baseUrl {
+    if (_envUrl.isNotEmpty) return _envUrl;
+    if (productionUrl.isNotEmpty) return productionUrl;
+
     if (kIsWeb) return 'http://127.0.0.1:8000';
     return defaultTargetPlatform == TargetPlatform.android
         ? 'http://10.0.2.2:8000'
@@ -21,8 +29,13 @@ class ApiConfig {
   // User endpoints
   static String get profileUrl => '$apiUrl/users/me';
 
+  // PayPal Endpoints
+  static String get paypalConfigUrl => '$apiUrl/payments/paypal/config';
+  static String get paypalCreateOrderUrl => '$apiUrl/payments/paypal/create-order';
+  static String get paypalCaptureOrderUrl => '$apiUrl/payments/paypal/capture-order';
+
   // Timeouts
-  static const Duration connectionTimeout = Duration(seconds: 8);
-  static const Duration receiveTimeout = Duration(seconds: 8);
+  static const Duration connectionTimeout = Duration(seconds: 10);
+  static const Duration receiveTimeout = Duration(seconds: 10);
 }
 
