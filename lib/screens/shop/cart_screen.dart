@@ -253,7 +253,7 @@ class _CartScreenState extends State<CartScreen> {
       final montoUsd = (orderRes['monto_usd'] is num) ? (orderRes['monto_usd'] as num).toDouble() : (cart.total / 6.96);
 
       // 2. Abrir la ventana segura de PayPal Sandbox
-      UrlHelper.openUrl(approveUrl);
+      await UrlHelper.openUrl(approveUrl);
 
       // 3. Mostrar diálogo de captura y confirmación
       if (!mounted) return;
@@ -382,7 +382,7 @@ class _CartScreenState extends State<CartScreen> {
                                 final captureId = capRes['paypal_capture_id'] ?? orderId;
 
                                 cart.clearCart();
-                                Navigator.pop(ctx); // Cierra bottom sheet
+                                if (ctx.mounted) Navigator.pop(ctx); // Cierra bottom sheet
 
                                 // Mostrar diálogo de confirmación oficial
                                 await showDialog(

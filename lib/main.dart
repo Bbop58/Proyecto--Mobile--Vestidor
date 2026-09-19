@@ -88,7 +88,7 @@ class MyApp extends StatelessWidget {
       child: Consumer2<AuthService, ThemeService>(
         builder: (context, auth, themeService, _) {
           return MaterialApp(
-            title: 'FICCT STORE Mobile',
+            title: 'ficcstore',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
@@ -145,7 +145,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
                   CircularProgressIndicator(color: AppTheme.getAccent(context)),
                   const SizedBox(height: 20),
                   Text(
-                    'Cargando FICCT STORE...',
+                    'Cargando ficcstore...',
                     style: TextStyle(color: AppTheme.getTextSecondary(context)),
                   ),
                 ],
