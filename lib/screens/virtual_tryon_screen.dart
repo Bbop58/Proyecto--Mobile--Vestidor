@@ -4,22 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
-import '../config/theme.dart';
 import '../models/product.dart';
 import '../models/product_variant.dart';
 import '../services/api_service.dart';
 import '../services/ai_service.dart';
 import '../services/cart_service.dart';
 import 'shop/cart_screen.dart';
+import 'ar_mirror_screen.dart';
 
 class VirtualTryOnScreen extends StatefulWidget {
   final Product product;
   final ProductVariant initialVariant;
+  final Uint8List? preloadedImageBytes;
 
   const VirtualTryOnScreen({
     super.key,
     required this.product,
     required this.initialVariant,
+    this.preloadedImageBytes,
   });
 
   @override
@@ -33,6 +35,7 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
   bool _isProcessing = false;
   String _scanStepText = '';
   VirtualTryOnResult? _result;
+  bool _showOriginal = false;
   final ImagePicker _picker = ImagePicker();
 
   String _calcePreference = 'REGULAR';
@@ -62,6 +65,14 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
   void initState() {
     super.initState();
     _selectedVariant = widget.initialVariant;
+    if (widget.preloadedImageBytes != null) {
+      _userImageBytes = widget.preloadedImageBytes;
+      _userImageBase64 = base64Encode(widget.preloadedImageBytes!);
+      // Auto-trigger tryon if image came from AR mirror snapshot
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _runVirtualTryOn();
+      });
+    }
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -196,6 +207,34 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
     );
   }
 
+  Widget _buildTryonImageWidget(String url) {
+    if (url.startsWith('data:image/')) {
+      try {
+        final base64String = url.split('base64,').last;
+        final bytes = base64Decode(base64String);
+        return Image.memory(
+          bytes,
+          width: double.infinity,
+          height: double.infinity,
+          fit: BoxFit.cover,
+        );
+      } catch (e) {
+        debugPrint('Error decodificando imagen base64: $e');
+      }
+    }
+    return Image.network(
+      url,
+      width: double.infinity,
+      height: double.infinity,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => const Icon(
+        Icons.checkroom,
+        color: Colors.white54,
+        size: 80,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const primaryColor = Color(0xFF6C5CE7);
@@ -223,6 +262,73 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Banner Espejo AR en Tiempo Real
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF6C5CE7), Color(0xFF00CEC9)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF6C5CE7).withOpacity(0.4),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ARMirrorScreen(
+                          product: widget.product,
+                          initialVariant: _selectedVariant,
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      children: [
+                        Icon(Icons.videocam, color: Colors.white, size: 28),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Modo Espejo AR en Tiempo Real',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Pruébate la ropa en vivo con la cámara como en Kinect',
+                                style: TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
             // Header: Prenda seleccionada
             Container(
               padding: const EdgeInsets.all(12),
@@ -329,9 +435,9 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
               const SizedBox(height: 16),
             ],
 
-            // Visor Central: Foto / Espejo de Cámara
+            // Visor Central: Foto / Generador Visual IA
             Container(
-              height: 300,
+              height: 320,
               decoration: BoxDecoration(
                 color: const Color(0xFF151828),
                 borderRadius: BorderRadius.circular(20),
@@ -372,17 +478,14 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
                         : _result != null
                             ? ClipRRect(
                                 borderRadius: BorderRadius.circular(18),
-                                child: Image.network(
-                                  _result!.imagenResultadoUrl,
-                                  width: double.infinity,
-                                  height: double.infinity,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Icon(
-                                    Icons.checkroom,
-                                    color: Colors.white54,
-                                    size: 80,
-                                  ),
-                                ),
+                                child: _showOriginal && _userImageBytes != null
+                                    ? Image.memory(
+                                        _userImageBytes!,
+                                        width: double.infinity,
+                                        height: double.infinity,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : _buildTryonImageWidget(_result!.imagenResultadoUrl),
                               )
                             : _userImageBytes != null
                                 ? ClipRRect(
@@ -404,7 +507,7 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
                                       ),
                                       const SizedBox(height: 12),
                                       const Text(
-                                        'Tómate una foto o sube una imagen\npara verte con la prenda',
+                                        'Tómate una foto o sube una imagen\npara verte con la prenda puesta',
                                         style: TextStyle(
                                           color: Colors.white70,
                                           fontSize: 14,
@@ -431,7 +534,9 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
                           const Icon(Icons.bolt, color: Color(0xFFFFEAA7), size: 14),
                           const SizedBox(width: 4),
                           Text(
-                            _result != null ? 'FICCT AI MATCH 97%' : 'ESPEJO VIRTUAL IA',
+                            _result != null
+                                ? (_showOriginal ? 'TU FOTO ORIGINAL' : 'TÚ CON LA PRENDA')
+                                : 'VESTIDOR VIRTUAL IA',
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -442,6 +547,43 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
                       ),
                     ),
                   ),
+
+                  // Toggle Antes / Después si ya hay resultado
+                  if (_result != null && _userImageBytes != null)
+                    Positioned(
+                      bottom: 12,
+                      right: 12,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _showOriginal = !_showOriginal),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.8),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFF00CEC9)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _showOriginal ? Icons.visibility : Icons.compare,
+                                color: const Color(0xFF00CEC9),
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _showOriginal ? 'Ver con Prenda' : 'Ver Foto Original',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
