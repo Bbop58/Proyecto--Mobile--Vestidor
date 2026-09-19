@@ -29,6 +29,8 @@ class PayPalService {
       if (reservaId != null) 'reserva_id': reservaId,
       'descripcion': descripcion ?? 'Compra en FICCT STORE',
       if (items != null) 'items': items,
+      'return_url': '${ApiConfig.apiUrl}/payments/paypal/return',
+      'cancel_url': '${ApiConfig.apiUrl}/payments/paypal/cancel',
     };
 
     final res = await _api.postAuth(ApiConfig.paypalCreateOrderUrl, payload);
