@@ -8,20 +8,15 @@ import '../models/product.dart';
 import '../models/product_variant.dart';
 import '../services/api_service.dart';
 import '../services/ai_service.dart';
-import '../services/cart_service.dart';
-import 'shop/cart_screen.dart';
-import 'ar_mirror_screen.dart';
 
 class VirtualTryOnScreen extends StatefulWidget {
   final Product product;
-  final ProductVariant initialVariant;
-  final Uint8List? preloadedImageBytes;
+  final ProductVariant? initialVariant;
 
   const VirtualTryOnScreen({
     super.key,
     required this.product,
-    required this.initialVariant,
-    this.preloadedImageBytes,
+    this.initialVariant,
   });
 
   @override
@@ -29,51 +24,13 @@ class VirtualTryOnScreen extends StatefulWidget {
 }
 
 class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
-  late ProductVariant _selectedVariant;
-  Uint8List? _userImageBytes;
-  String? _userImageBase64;
-  bool _isProcessing = false;
-  String _scanStepText = '';
-  VirtualTryOnResult? _result;
-  bool _showOriginal = false;
   final ImagePicker _picker = ImagePicker();
 
-  String _calcePreference = 'REGULAR';
-  int _alturaCm = 175;
-  int _pesoKg = 72;
-
-  // Preset sample models for instant testing
-  final List<Map<String, String>> _sampleModels = [
-    {
-      'label': 'Modelo 1 (Atlético)',
-      'desc': '1.78m - 74kg',
-      'url': 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=500&auto=format&fit=crop&q=80',
-    },
-    {
-      'label': 'Modelo 2 (Casual)',
-      'desc': '1.82m - 80kg',
-      'url': 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=500&auto=format&fit=crop&q=80',
-    },
-    {
-      'label': 'Modelo 3 (Streetwear)',
-      'desc': '1.72m - 68kg',
-      'url': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
-    },
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedVariant = widget.initialVariant;
-    if (widget.preloadedImageBytes != null) {
-      _userImageBytes = widget.preloadedImageBytes;
-      _userImageBase64 = base64Encode(widget.preloadedImageBytes!);
-      // Auto-trigger tryon if image came from AR mirror snapshot
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _runVirtualTryOn();
-      });
-    }
-  }
+  Uint8List? _userImageBytes;
+  String? _userImageBase64;
+  bool _isLoading = false;
+  String? _generatedImageBase64;
+  String? _errorMessage;
 
   Future<void> _pickImage(ImageSource source) async {
     try {
@@ -88,40 +45,21 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
         setState(() {
           _userImageBytes = bytes;
           _userImageBase64 = base64Encode(bytes);
-          _result = null;
+          _errorMessage = null;
         });
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudo abrir la cámara o galería: $e'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
+      setState(() {
+        _errorMessage = 'No se pudo acceder a la cámara o galería: $e';
+      });
     }
   }
 
-  void _selectPresetModel(String url, String desc) {
-    const dummyBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-    setState(() {
-      _userImageBytes = null;
-      _userImageBase64 = dummyBase64;
-      _result = null;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Avatar seleccionado ($desc). ¡Listo para probar con IA!'),
-        backgroundColor: const Color(0xFF6C5CE7),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  Future<void> _runVirtualTryOn() async {
+  Future<void> _generateTryOn() async {
     if (_userImageBase64 == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Primero toma una foto o selecciona un modelo de ejemplo.'),
+          content: Text('Por favor, toma una foto o elige una de tu galería.'),
           backgroundColor: Colors.orangeAccent,
         ),
       );
@@ -129,110 +67,79 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
     }
 
     setState(() {
-      _isProcessing = true;
-      _scanStepText = '📸 Escaneando postura y proporciones corporales...';
+      _isLoading = true;
+      _errorMessage = null;
     });
 
-    final apiService = Provider.of<ApiService>(context, listen: false);
-    final aiService = AIService(apiService);
+    try {
+      final apiService = Provider.of<ApiService>(context, listen: false);
+      final aiService = AIService(apiService);
 
-    Future.delayed(const Duration(milliseconds: 700), () {
-      if (mounted && _isProcessing) {
-        setState(() => _scanStepText = '🧵 Analizando tejido y caída de tela en el torso...');
+      final result = await aiService.generateVirtualTryOn(
+        productoId: widget.product.id,
+        imagenBase64: _userImageBase64!,
+      );
+
+      if (mounted) {
+        setState(() {
+          _generatedImageBase64 = result;
+          _isLoading = false;
+        });
       }
-    });
-
-    Future.delayed(const Duration(milliseconds: 1400), () {
-      if (mounted && _isProcessing) {
-        setState(() => _scanStepText = '🧠 Google Gemini calculando talla ideal y calce...');
-      }
-    });
-
-    final result = await aiService.requestVirtualTryOn(
-      varianteId: _selectedVariant.id,
-      imagenBase64: _userImageBase64!,
-      alturaCm: _alturaCm,
-      pesoKg: _pesoKg,
-      preferenciaCalce: _calcePreference,
-    );
-
-    if (mounted) {
-      setState(() {
-        _isProcessing = false;
-        _result = result;
-      });
-
-      if (result == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se pudo conectar con el servicio de IA. Inténtalo de nuevo.'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        });
       }
     }
   }
 
-  void _addSuggestedSizeToCart() {
-    if (_result == null) return;
-    final suggestedSize = _result!.tallaSugerida;
+  void _resetToTryAgain() {
+    setState(() {
+      _generatedImageBase64 = null;
+      _errorMessage = null;
+    });
+  }
 
-    // Buscar variante que coincida con la talla sugerida y el color actual
-    ProductVariant targetVariant = widget.product.variantes.firstWhere(
-      (v) => v.talla.toUpperCase() == suggestedSize.toUpperCase() && v.color == _selectedVariant.color,
-      orElse: () => widget.product.variantes.firstWhere(
-        (v) => v.talla.toUpperCase() == suggestedSize.toUpperCase(),
-        orElse: () => _selectedVariant,
-      ),
-    );
-
-    final cart = Provider.of<CartService>(context, listen: false);
-    cart.addItem(widget.product, targetVariant, quantity: 1);
-
+  void _handleShareOrSave() {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('¡Añadido al carrito en Talla ${targetVariant.talla} (${targetVariant.color})!'),
-        backgroundColor: Colors.green,
-        action: SnackBarAction(
-          label: 'Ver Carrito',
-          textColor: Colors.white,
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const CartScreen()),
-            );
-          },
-        ),
+      const SnackBar(
+        content: Text('¡Imagen lista para compartir o guardar!'),
+        backgroundColor: Color(0xFF6C5CE7),
+        duration: Duration(seconds: 2),
       ),
     );
   }
 
-  Widget _buildTryonImageWidget(String url) {
-    if (url.startsWith('data:image/')) {
-      try {
-        final base64String = url.split('base64,').last;
-        final bytes = base64Decode(base64String);
-        return Image.memory(
-          bytes,
-          width: double.infinity,
-          height: double.infinity,
-          fit: BoxFit.cover,
-        );
-      } catch (e) {
-        debugPrint('Error decodificando imagen base64: $e');
+  Widget _buildDecodedImage(String base64OrDataUri) {
+    try {
+      String cleanBase64 = base64OrDataUri;
+      if (base64OrDataUri.contains('base64,')) {
+        cleanBase64 = base64OrDataUri.split('base64,').last;
       }
+      final bytes = base64Decode(cleanBase64.trim());
+      return Image.memory(
+        bytes,
+        fit: BoxFit.contain,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (_, _, _) => const Center(
+          child: Text(
+            'Error al visualizar la imagen generada',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ),
+      );
+    } catch (e) {
+      return Center(
+        child: Text(
+          'Error al procesar la imagen: $e',
+          style: const TextStyle(color: Colors.white70),
+        ),
+      );
     }
-    return Image.network(
-      url,
-      width: double.infinity,
-      height: double.infinity,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => const Icon(
-        Icons.checkroom,
-        color: Colors.white54,
-        size: 80,
-      ),
-    );
   }
 
   @override
@@ -241,550 +148,227 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
     const darkBg = Color(0xFF0F111A);
     const cardBg = Color(0xFF1B1E2E);
 
+    // ==========================================
+    // VISTA 1: RESULTADO EN PANTALLA COMPLETA
+    // ==========================================
+    if (_generatedImageBase64 != null) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Imagen generada a pantalla completa
+            Center(
+              child: _buildDecodedImage(_generatedImageBase64!),
+            ),
+
+            // Barra superior traslúcida con botón de cerrar
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: EdgeInsets.only(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  left: 16,
+                  right: 16,
+                  bottom: 16,
+                ),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.black87, Colors.transparent],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Tu Vestidor Virtual',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Barra inferior traslúcida con acciones: Volver a intentar y Guardar/Compartir
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).padding.bottom + 16,
+                  left: 20,
+                  right: 20,
+                  top: 20,
+                ),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.transparent, Colors.black87, Colors.black],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _resetToTryAgain,
+                        icon: const Icon(Icons.refresh, color: Colors.white),
+                        label: const Text(
+                          'Volver a intentar',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.white54),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _handleShareOrSave,
+                        icon: const Icon(Icons.share, color: Colors.white),
+                        label: const Text(
+                          'Guardar / Compartir',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ==========================================
+    // VISTA 2: PANTALLA PRINCIPAL DE CAPTURA
+    // ==========================================
     return Scaffold(
       backgroundColor: darkBg,
       appBar: AppBar(
-        title: const Row(
-          children: [
-            Icon(Icons.auto_awesome, color: Color(0xFFA29BFE), size: 20),
-            SizedBox(width: 8),
-            Text(
-              'Vestidor Virtual con IA',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-          ],
+        title: const Text(
+          'Vestidor Virtual',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         backgroundColor: const Color(0xFF131522),
         elevation: 0,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Banner Espejo AR en Tiempo Real
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF6C5CE7), Color(0xFF00CEC9)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF6C5CE7).withOpacity(0.4),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+      body: _isLoading
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00CEC9)),
+                    strokeWidth: 3.5,
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Generando tu prueba virtual...',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Gemini está adaptando la prenda a tu foto de forma realista',
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ARMirrorScreen(
-                          product: widget.product,
-                          initialVariant: _selectedVariant,
-                        ),
-                      ),
-                    );
-                  },
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Prenda a probar (Referencia fija del producto actual)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: cardBg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
+                    ),
                     child: Row(
                       children: [
-                        Icon(Icons.videocam, color: Colors.white, size: 28),
-                        SizedBox(width: 12),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: (widget.product.imagenUrl != null &&
+                                  widget.product.imagenUrl!.isNotEmpty)
+                              ? Image.network(
+                                  widget.product.imagenUrl!,
+                                  width: 65,
+                                  height: 65,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => Container(
+                                    width: 65,
+                                    height: 65,
+                                    color: Colors.grey.shade800,
+                                    child: const Icon(Icons.checkroom, color: Colors.white70),
+                                  ),
+                                )
+                              : Container(
+                                  width: 65,
+                                  height: 65,
+                                  color: Colors.grey.shade800,
+                                  child: const Icon(Icons.checkroom, color: Colors.white70),
+                                ),
+                        ),
+                        const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Modo Espejo AR en Tiempo Real',
-                                style: TextStyle(
+                                widget.product.nombre,
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 15,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              SizedBox(height: 2),
+                              const SizedBox(height: 4),
                               Text(
-                                'Pruébate la ropa en vivo con la cámara como en Kinect',
-                                style: TextStyle(color: Colors.white70, fontSize: 12),
+                                'Prenda a probar',
+                                style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
                               ),
-                            ],
-                          ),
-                        ),
-                        Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 16),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // Header: Prenda seleccionada
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: cardBg,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: primaryColor.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.network(
-                      widget.product.imagenUrl ?? '',
-                      width: 60,
-                      height: 60,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        width: 60,
-                        height: 60,
-                        color: Colors.grey.shade800,
-                        child: const Icon(Icons.checkroom, color: Colors.white70),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.product.nombre,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Color: ${_selectedVariant.color} | Talla Base: ${_selectedVariant.talla}',
-                          style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${(widget.product.precioBase + _selectedVariant.precioAdicional).toStringAsFixed(2)} Bs.',
-                          style: const TextStyle(
-                            color: Color(0xFF00CEC9),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Selector de Color/Variante
-            if (widget.product.variantes.length > 1) ...[
-              const Text(
-                'Selecciona el Color a Probar:',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 38,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: widget.product.variantes.length,
-                  itemBuilder: (context, index) {
-                    final v = widget.product.variantes[index];
-                    final isSelected = v.id == _selectedVariant.id;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text('${v.color} (${v.talla})'),
-                        selected: isSelected,
-                        selectedColor: primaryColor,
-                        backgroundColor: cardBg,
-                        labelStyle: TextStyle(
-                          color: isSelected ? Colors.white : Colors.grey.shade300,
-                          fontSize: 12,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        ),
-                        onSelected: (selected) {
-                          if (selected) {
-                            setState(() {
-                              _selectedVariant = v;
-                              _result = null;
-                            });
-                          }
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // Visor Central: Foto / Generador Visual IA
-            Container(
-              height: 320,
-              decoration: BoxDecoration(
-                color: const Color(0xFF151828),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: _isProcessing
-                      ? const Color(0xFF00CEC9)
-                      : primaryColor.withOpacity(0.5),
-                  width: 2,
-                ),
-              ),
-              child: Stack(
-                children: [
-                  // Imagen o Silueta
-                  Center(
-                    child: _isProcessing
-                        ? Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const CircularProgressIndicator(
-                                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00CEC9)),
-                                strokeWidth: 3,
-                              ),
-                              const SizedBox(height: 20),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 24),
-                                child: Text(
-                                  _scanStepText,
-                                  style: const TextStyle(
-                                    color: Color(0xFF00CEC9),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            ],
-                          )
-                        : _result != null
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(18),
-                                child: _showOriginal && _userImageBytes != null
-                                    ? Image.memory(
-                                        _userImageBytes!,
-                                        width: double.infinity,
-                                        height: double.infinity,
-                                        fit: BoxFit.cover,
-                                      )
-                                    : _buildTryonImageWidget(_result!.imagenResultadoUrl),
-                              )
-                            : _userImageBytes != null
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(18),
-                                    child: Image.memory(
-                                      _userImageBytes!,
-                                      width: double.infinity,
-                                      height: double.infinity,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  )
-                                : Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.person_outline,
-                                        size: 80,
-                                        color: primaryColor.withOpacity(0.6),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      const Text(
-                                        'Tómate una foto o sube una imagen\npara verte con la prenda puesta',
-                                        style: TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 14,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ],
-                                  ),
-                  ),
-
-                  // Badge de Modo IA
-                  Positioned(
-                    top: 12,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.7),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: primaryColor.withOpacity(0.6)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.bolt, color: Color(0xFFFFEAA7), size: 14),
-                          const SizedBox(width: 4),
-                          Text(
-                            _result != null
-                                ? (_showOriginal ? 'TU FOTO ORIGINAL' : 'TÚ CON LA PRENDA')
-                                : 'VESTIDOR VIRTUAL IA',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  // Toggle Antes / Después si ya hay resultado
-                  if (_result != null && _userImageBytes != null)
-                    Positioned(
-                      bottom: 12,
-                      right: 12,
-                      child: GestureDetector(
-                        onTap: () => setState(() => _showOriginal = !_showOriginal),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.8),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFF00CEC9)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                _showOriginal ? Icons.visibility : Icons.compare,
-                                color: const Color(0xFF00CEC9),
-                                size: 16,
-                              ),
-                              const SizedBox(width: 6),
+                              const SizedBox(height: 2),
                               Text(
-                                _showOriginal ? 'Ver con Prenda' : 'Ver Foto Original',
+                                '${widget.product.precioBase.toStringAsFixed(2)} Bs.',
                                 style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Botones para tomar foto / elegir
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isProcessing ? null : () => _pickImage(ImageSource.camera),
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text('Tomar Foto'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: cardBg,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.grey.shade700),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isProcessing ? null : () => _pickImage(ImageSource.gallery),
-                    icon: const Icon(Icons.photo_library),
-                    label: const Text('Galería'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: cardBg,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.grey.shade700),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // Avatares de Prueba Rápida
-            const Text(
-              'O prueba con un modelo de ejemplo:',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: _sampleModels.map((model) {
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: OutlinedButton(
-                      onPressed: _isProcessing
-                          ? null
-                          : () => _selectPresetModel(model['url']!, model['desc']!),
-                      style: OutlinedButton.styleFrom(
-                        backgroundColor: cardBg,
-                        side: BorderSide(color: Colors.grey.shade800),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: Text(
-                        model['label']!.split(' ').first,
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Botón Principal de Procesamiento con IA
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF6C5CE7), Color(0xFF00CEC9)],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: primaryColor.withOpacity(0.4),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ElevatedButton.icon(
-                onPressed: _isProcessing ? null : _runVirtualTryOn,
-                icon: const Icon(Icons.auto_awesome, color: Colors.white),
-                label: Text(
-                  _isProcessing ? 'PROCESANDO CON IA...' : 'PROBARME ESTA PRENDA CON IA',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.transparent,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Tarjeta de Resultados Inteligentes de Talla y Calce
-            if (_result != null) ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: cardBg,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFF00CEC9), width: 1.5),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.check_circle, color: Color(0xFF00CEC9), size: 22),
-                            SizedBox(width: 8),
-                            Text(
-                              'Asesoría de Talla Inteligente',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF00CEC9).withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '${_result!.nivelCoincidenciaPorcentaje}% Match',
-                            style: const TextStyle(
-                              color: Color(0xFF00CEC9),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(color: Colors.white24, height: 24),
-
-                    // Talla Sugerida
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: primaryColor,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            'TALLA ${_result!.tallaSugerida}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 18,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Calce Recomendado:',
-                                style: TextStyle(color: Colors.white70, fontSize: 12),
-                              ),
-                              Text(
-                                _result!.calceDetectado,
-                                style: const TextStyle(
-                                  color: Color(0xFFFFEAA7),
+                                  color: Color(0xFF00CEC9),
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
                                 ),
@@ -794,124 +378,195 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
                         ),
                       ],
                     ),
+                  ),
 
-                    const SizedBox(height: 16),
+                  const SizedBox(height: 24),
 
-                    // Análisis de Silueta
-                    Text(
-                      _result!.analisisSilueta,
-                      style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // Consejo de Estilo
+                  // Mensaje de Error simple en español si la IA falló
+                  if (_errorMessage != null) ...[
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.black26,
-                        borderRadius: BorderRadius.circular(12),
+                        color: Colors.red.shade900.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.6)),
                       ),
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.tips_and_updates, color: Color(0xFFFFEAA7), size: 20),
-                          const SizedBox(width: 8),
+                          const Icon(Icons.error_outline, color: Colors.redAccent, size: 24),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              _result!.consejoEstilo,
+                              _errorMessage!,
                               style: const TextStyle(color: Colors.white, fontSize: 13),
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 20),
+                  ],
 
-                    const SizedBox(height: 16),
-
-                    // Botón para Añadir la Talla Sugerida al Carrito
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _addSuggestedSizeToCart,
-                        icon: const Icon(Icons.shopping_bag_outlined),
-                        label: Text(
-                          'AÑADIR TALLA ${_result!.tallaSugerida} AL CARRITO',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00CEC9),
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                  // Área de previsualización o toma de foto
+                  Container(
+                    height: 340,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF151828),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: _userImageBytes != null
+                            ? primaryColor
+                            : Colors.white12,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: _userImageBytes != null
+                        ? Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(18),
+                                child: Image.memory(
+                                  _userImageBytes!,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                top: 12,
+                                right: 12,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.7),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: IconButton(
+                                    icon: const Icon(Icons.refresh, color: Colors.white, size: 20),
+                                    tooltip: 'Cambiar foto',
+                                    onPressed: () => setState(() {
+                                      _userImageBytes = null;
+                                      _userImageBase64 = null;
+                                      _errorMessage = null;
+                                    }),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        : Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.person_outline,
+                                size: 80,
+                                color: primaryColor.withValues(alpha: 0.6),
+                              ),
+                              const SizedBox(height: 16),
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 24),
+                                child: Text(
+                                  'Tómate una foto o sube una desde tu galería para verte con la prenda puesta',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                    height: 1.4,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ],
                           ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Botones de Selección: Cámara o Galería
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _pickImage(ImageSource.camera),
+                          icon: const Icon(Icons.camera_alt),
+                          label: const Text('Tomar Foto'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: cardBg,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(color: Colors.grey.shade700),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _pickImage(ImageSource.gallery),
+                          icon: const Icon(Icons.photo_library),
+                          label: const Text('Elegir de Galería'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: cardBg,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(color: Colors.grey.shade700),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Botón Principal: Probar Prenda con IA
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      gradient: LinearGradient(
+                        colors: _userImageBytes != null
+                            ? [const Color(0xFF6C5CE7), const Color(0xFF00CEC9)]
+                            : [Colors.grey.shade800, Colors.grey.shade700],
+                      ),
+                      boxShadow: _userImageBytes != null
+                          ? [
+                              BoxShadow(
+                                color: primaryColor.withValues(alpha: 0.4),
+                                blurRadius: 16,
+                                offset: const Offset(0, 4),
+                              ),
+                            ]
+                          : [],
+                    ),
+                    child: ElevatedButton.icon(
+                      onPressed: _userImageBytes != null ? _generateTryOn : null,
+                      icon: const Icon(Icons.auto_awesome, color: Colors.white),
+                      label: const Text(
+                        'PROBAR PRENDA',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        disabledBackgroundColor: Colors.transparent,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Combinaciones Sugeridas de Catálogo
-              if (_result!.combinacionesSugeridas.isNotEmpty) ...[
-                const Text(
-                  'Completa tu Outfit FICCT STORE:',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
                   ),
-                ),
-                const SizedBox(height: 10),
-                Column(
-                  children: _result!.combinacionesSugeridas.map((item) {
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: cardBg,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.white12),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.style, color: Color(0xFFA29BFE), size: 24),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item.nombre,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  item.motivo,
-                                  style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ],
 
-            const SizedBox(height: 40),
-          ],
-        ),
-      ),
+                  const SizedBox(height: 30),
+                ],
+              ),
+            ),
     );
   }
 }

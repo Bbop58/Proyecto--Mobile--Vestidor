@@ -612,14 +612,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         color: Colors.transparent,
                         child: InkWell(
                           onTap: () {
-                            final v = _selectedVariant ?? (_product!.variantes.isNotEmpty ? _product!.variantes.first : null);
-                            if (v == null) return;
+                            if (_product == null) return;
                             Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => VirtualTryOnScreen(
                                   product: _product!,
-                                  initialVariant: v,
                                 ),
                               ),
                             );
@@ -647,27 +645,27 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'PROBARME CON IA (VESTIDOR)',
+                                        'Vestidor Virtual',
                                         style: TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.w900,
-                                          fontSize: 14,
+                                          fontSize: 15,
                                           letterSpacing: 0.5,
                                         ),
                                       ),
                                       SizedBox(height: 2),
                                       Text(
-                                        'Pruébate la prenda y encuentra tu talla ideal con Gemini',
+                                        'Pruébate esta prenda con tu foto usando Gemini',
                                         style: TextStyle(
                                           color: Colors.white70,
-                                          fontSize: 11,
+                                          fontSize: 12,
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
                                 const Icon(
-                                  Icons.arrow_forward_ios_rounded,
+                                  Icons.arrow_forward_ios,
                                   color: Colors.white70,
                                   size: 16,
                                 ),
