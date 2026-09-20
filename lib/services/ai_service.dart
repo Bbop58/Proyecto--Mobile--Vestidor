@@ -22,6 +22,7 @@ class AIService {
     final response = await _api.postAuth(
       '${ApiConfig.apiUrl}/ai/virtual-tryon',
       body,
+      const Duration(seconds: 90),
     );
 
     if (response.success && response.data != null && response.data is Map<String, dynamic>) {

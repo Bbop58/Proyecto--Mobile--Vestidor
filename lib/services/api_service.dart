@@ -55,7 +55,7 @@ class ApiService {
 
   /// POST request (con auth)
   Future<ApiResponse> postAuth(String url,
-      [Map<String, dynamic>? body]) async {
+      [Map<String, dynamic>? body, Duration? timeout]) async {
     try {
       final headers = await _authHeaders();
       final response = await _client
@@ -64,7 +64,7 @@ class ApiService {
             headers: headers,
             body: body != null ? jsonEncode(body) : null,
           )
-          .timeout(ApiConfig.connectionTimeout);
+          .timeout(timeout ?? ApiConfig.connectionTimeout);
       return _handleResponse(response);
     } on SocketException {
       return ApiResponse(
