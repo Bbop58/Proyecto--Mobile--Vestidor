@@ -25,6 +25,7 @@ class ApiConfig {
   static String get loginUrl => '$apiUrl/auth/login';
   static String get registerUrl => '$apiUrl/auth/register';
   static String get logoutUrl => '$apiUrl/auth/logout';
+  static String get changePasswordUrl => '$apiUrl/auth/change-password';
 
   // User endpoints
   static String get profileUrl => '$apiUrl/users/me';

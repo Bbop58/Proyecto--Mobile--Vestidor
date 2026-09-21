@@ -236,6 +236,46 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Cambiar contraseña del usuario autenticado
+  Future<Map<String, dynamic>> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final response = await _apiService.postAuth(
+        ApiConfig.changePasswordUrl,
+        {
+          'current_password': currentPassword,
+          'new_password': newPassword,
+        },
+      );
+
+      if (response.success) {
+        String msg = 'Contraseña actualizada exitosamente';
+        if (response.data is Map<String, dynamic> &&
+            response.data['message'] != null) {
+          msg = response.data['message'] as String;
+        }
+        return {'success': true, 'message': msg};
+      } else {
+        final err = response.error ?? 'Error al cambiar contraseña';
+        _setError(err);
+        return {'success': false, 'message': err};
+      }
+    } catch (e) {
+      debugPrint('Error al cambiar contraseña: $e');
+      final err = 'Error de conexión al cambiar contraseña: ${e.toString()}';
+      _setError(err);
+      return {'success': false, 'message': err};
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+
   // Helpers privados
   void _setLoading(bool value) {
     _isLoading = value;

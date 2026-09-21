@@ -408,6 +408,15 @@ class _HomeScreenState extends State<HomeScreen>
                             Divider(height: 1, indent: 56, color: border),
                             _buildActionTile(
                               context: context,
+                              icon: Icons.lock_reset_rounded,
+                              label: 'Cambiar Contraseña',
+                              subtitle: 'Actualiza tu clave de acceso de forma segura',
+                              color: accent,
+                              onTap: () => _showChangePassword(context, auth),
+                            ),
+                            Divider(height: 1, indent: 56, color: border),
+                            _buildActionTile(
+                              context: context,
                               icon: isDark
                                   ? Icons.light_mode_outlined
                                   : Icons.dark_mode_outlined,
@@ -671,6 +680,330 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showChangePassword(BuildContext context, AuthService authService) {
+    final currentCtrl = TextEditingController();
+    final newCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+
+    final cardBg = AppTheme.getCardBg(context);
+    final textPrimary = AppTheme.getTextPrimary(context);
+    final textSecondary = AppTheme.getTextSecondary(context);
+    final accent = AppTheme.getAccent(context);
+    final border = AppTheme.getBorder(context);
+
+    bool obscureCurrent = true;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
+    bool isSubmitting = false;
+    String? localError;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return Container(
+            padding: EdgeInsets.fromLTRB(
+              24,
+              20,
+              24,
+              MediaQuery.of(context).viewInsets.bottom + 24,
+            ),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              border: Border(
+                top: BorderSide(color: border),
+                left: BorderSide(color: border),
+                right: BorderSide(color: border),
+              ),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: border,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(Icons.lock_reset_rounded, color: accent, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Cambiar Contraseña',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: textPrimary,
+                              ),
+                            ),
+                            Text(
+                              'Define una nueva clave de acceso segura',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+
+                  if (localError != null) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.errorBg,
+                        borderRadius: BorderRadius.circular(AppTheme.borderRadiusSmall),
+                        border: Border.all(color: AppTheme.errorColor.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline_rounded, color: AppTheme.errorColor, size: 18),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              localError!,
+                              style: const TextStyle(
+                                color: AppTheme.errorColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+
+                  // Contraseña Actual
+                  TextFormField(
+                    controller: currentCtrl,
+                    obscureText: obscureCurrent,
+                    style: TextStyle(color: textPrimary),
+                    decoration: InputDecoration(
+                      prefixIcon: Icon(Icons.lock_outline_rounded, color: accent, size: 20),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscureCurrent ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          color: textSecondary,
+                          size: 20,
+                        ),
+                        onPressed: () => setModalState(() => obscureCurrent = !obscureCurrent),
+                      ),
+                      hintText: 'Contraseña actual',
+                      hintStyle: TextStyle(color: textSecondary, fontSize: 14),
+                      filled: true,
+                      fillColor: AppTheme.getInputBg(context),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                        borderSide: BorderSide(color: border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                        borderSide: BorderSide(color: accent, width: 1.5),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Nueva Contraseña
+                  TextFormField(
+                    controller: newCtrl,
+                    obscureText: obscureNew,
+                    style: TextStyle(color: textPrimary),
+                    decoration: InputDecoration(
+                      prefixIcon: Icon(Icons.shield_outlined, color: accent, size: 20),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscureNew ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          color: textSecondary,
+                          size: 20,
+                        ),
+                        onPressed: () => setModalState(() => obscureNew = !obscureNew),
+                      ),
+                      hintText: 'Nueva contraseña (mín. 8 car.)',
+                      hintStyle: TextStyle(color: textSecondary, fontSize: 14),
+                      filled: true,
+                      fillColor: AppTheme.getInputBg(context),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                        borderSide: BorderSide(color: border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                        borderSide: BorderSide(color: accent, width: 1.5),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Confirmar Nueva Contraseña
+                  TextFormField(
+                    controller: confirmCtrl,
+                    obscureText: obscureConfirm,
+                    style: TextStyle(color: textPrimary),
+                    decoration: InputDecoration(
+                      prefixIcon: Icon(Icons.check_circle_outline_rounded, color: accent, size: 20),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscureConfirm ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          color: textSecondary,
+                          size: 20,
+                        ),
+                        onPressed: () => setModalState(() => obscureConfirm = !obscureConfirm),
+                      ),
+                      hintText: 'Confirmar nueva contraseña',
+                      hintStyle: TextStyle(color: textSecondary, fontSize: 14),
+                      filled: true,
+                      fillColor: AppTheme.getInputBg(context),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                        borderSide: BorderSide(color: border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                        borderSide: BorderSide(color: accent, width: 1.5),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  SizedBox(
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              final current = currentCtrl.text.trim();
+                              final newPass = newCtrl.text.trim();
+                              final confirm = confirmCtrl.text.trim();
+
+                              if (current.isEmpty) {
+                                setModalState(() => localError = 'Ingresa tu contraseña actual');
+                                return;
+                              }
+                              if (newPass.length < 8) {
+                                setModalState(() => localError = 'La nueva contraseña debe tener al menos 8 caracteres');
+                                return;
+                              }
+                              if (newPass == current) {
+                                setModalState(() => localError = 'La nueva contraseña debe ser diferente a la actual');
+                                return;
+                              }
+                              if (newPass != confirm) {
+                                setModalState(() => localError = 'Las nuevas contraseñas no coinciden');
+                                return;
+                              }
+
+                              setModalState(() {
+                                isSubmitting = true;
+                                localError = null;
+                              });
+
+                              final result = await authService.changePassword(
+                                currentPassword: current,
+                                newPassword: newPass,
+                              );
+
+                              if (result['success'] == true && context.mounted) {
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.check_circle_outline,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            result['message'] ?? 'Contraseña actualizada correctamente',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    backgroundColor: AppTheme.successColor,
+                                    behavior: SnackBarBehavior.floating,
+                                    margin: const EdgeInsets.all(16),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        AppTheme.borderRadiusMedium,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                setModalState(() {
+                                  isSubmitting = false;
+                                  localError = result['message'] ?? 'Error al actualizar contraseña';
+                                });
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                        ),
+                      ),
+                      child: isSubmitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text(
+                              'Actualizar Contraseña',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
