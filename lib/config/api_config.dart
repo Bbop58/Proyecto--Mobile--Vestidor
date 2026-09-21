@@ -30,6 +30,12 @@ class ApiConfig {
   // User endpoints
   static String get profileUrl => '$apiUrl/users/me';
 
+  // Notifications endpoints
+  static String get notificationsUrl => '$apiUrl/notifications';
+  static String get unreadNotificationsCountUrl => '$apiUrl/notifications/unread-count';
+  static String markNotificationReadUrl(String id) => '$apiUrl/notifications/$id/read';
+  static String get markAllNotificationsReadUrl => '$apiUrl/notifications/mark-all-read';
+
   // PayPal Endpoints
   static String get paypalConfigUrl => '$apiUrl/payments/paypal/config';
   static String get paypalCreateOrderUrl => '$apiUrl/payments/paypal/create-order';

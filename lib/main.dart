@@ -24,6 +24,7 @@ import 'services/season_service.dart';
 import 'services/storage_service.dart';
 import 'services/theme_service.dart';
 import 'services/paypal_service.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -80,6 +81,13 @@ class MyApp extends StatelessWidget {
         ),
         ProxyProvider<ApiService, PayPalService>(
           update: (_, api, _) => PayPalService(api),
+        ),
+        ChangeNotifierProxyProvider<ApiService, NotificationService>(
+          create: (context) => NotificationService(context.read<ApiService>()),
+          update: (_, api, notif) {
+            if (notif != null) return notif;
+            return NotificationService(api);
+          },
         ),
         ChangeNotifierProvider<CartService>(
           create: (_) => CartService(),

@@ -4,9 +4,12 @@ import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../services/auth_service.dart';
 import '../../services/theme_service.dart';
+import '../../services/notification_service.dart';
 import 'branches_public_screen.dart';
 import 'purchase_history_screen.dart';
 import '../shop/virtual_fitting_screen.dart';
+import '../notifications/notifications_screen.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,6 +34,9 @@ class _HomeScreenState extends State<HomeScreen>
       CurvedAnimation(parent: _animController, curve: Curves.easeOut),
     );
     _animController.forward();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<NotificationService>().fetchUnreadCount();
+    });
   }
 
   @override
@@ -159,6 +165,55 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                           Row(
                             children: [
+                              // Notificaciones Bell con Badge
+                              Consumer<NotificationService>(
+                                builder: (context, notifService, _) {
+                                  final count = notifService.unreadCount;
+                                  return IconButton(
+                                    icon: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        Icon(
+                                          count > 0 ? Icons.notifications_active_rounded : Icons.notifications_outlined,
+                                          color: count > 0 ? accent : textSecondary,
+                                          size: 22,
+                                        ),
+                                        if (count > 0)
+                                          Positioned(
+                                            top: 0,
+                                            right: 0,
+                                            child: Container(
+                                              padding: const EdgeInsets.all(3),
+                                              decoration: const BoxDecoration(
+                                                color: AppTheme.errorColor,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
+                                              child: Center(
+                                                child: Text(
+                                                  count > 9 ? '9+' : '$count',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 8,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    tooltip: 'Notificaciones ($count)',
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                              const SizedBox(width: 2),
                               // Dark mode toggle button
                               IconButton(
                                 icon: Icon(
@@ -394,6 +449,26 @@ class _HomeScreenState extends State<HomeScreen>
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) => const VirtualFittingScreen(),
+                                ),
+                              ),
+                            ),
+                            Divider(height: 1, indent: 56, color: border),
+                            Consumer<NotificationService>(
+                              builder: (context, notif, _) => _buildActionTile(
+                                context: context,
+                                icon: notif.unreadCount > 0
+                                    ? Icons.notifications_active_rounded
+                                    : Icons.notifications_outlined,
+                                label: 'Bandeja de Notificaciones',
+                                subtitle: notif.unreadCount > 0
+                                    ? '${notif.unreadCount} alerta(s) sin leer'
+                                    : 'Estado de reservas y compras',
+                                color: notif.unreadCount > 0 ? accent : null,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const NotificationsScreen(),
+                                  ),
                                 ),
                               ),
                             ),

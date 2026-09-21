@@ -7,9 +7,12 @@ import '../../services/cart_service.dart';
 import '../../services/category_service.dart';
 import '../../services/product_service.dart';
 import '../../services/season_service.dart';
+import '../../services/notification_service.dart';
 import 'cart_screen.dart';
 import 'product_detail_screen.dart';
 import 'virtual_fitting_screen.dart';
+import '../notifications/notifications_screen.dart';
+
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({super.key});
@@ -50,6 +53,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       final catService = context.read<CategoryService>();
       final seasonService = context.read<SeasonService>();
       final prodService = context.read<ProductService>();
+      context.read<NotificationService>().fetchUnreadCount();
 
       final categories = await catService.getCategories();
       final seasons = await seasonService.getSeasons();
@@ -154,6 +158,54 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ],
         ),
         actions: [
+          // Bell Icon con Badge de Notificaciones
+          Consumer<NotificationService>(
+            builder: (context, notifService, _) {
+              final count = notifService.unreadCount;
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      count > 0 ? Icons.notifications_active_rounded : Icons.notifications_outlined,
+                      size: 22,
+                    ),
+                    color: count > 0 ? accent : textPrimary,
+                    tooltip: 'Notificaciones',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                      );
+                    },
+                  ),
+                  if (count > 0)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          color: AppTheme.errorColor,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        child: Center(
+                          child: Text(
+                            count > 9 ? '9+' : '$count',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
           Stack(
             alignment: Alignment.center,
             children: [
