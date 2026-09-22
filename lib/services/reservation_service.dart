@@ -1,6 +1,7 @@
 import '../config/api_config.dart';
 import '../models/reservation.dart';
 import 'api_service.dart';
+import 'local_notification_service.dart';
 
 class ReservationService {
   final ApiService _api;
@@ -36,7 +37,14 @@ class ReservationService {
       if (nota != null && nota.isNotEmpty) 'nota': nota,
     };
 
-    return await _api.postAuth('${ApiConfig.apiUrl}/reservas', body);
+    final resp = await _api.postAuth('${ApiConfig.apiUrl}/reservas', body);
+    if (resp.success) {
+      LocalNotificationService.showNotification(
+        title: '📦 ¡Reserva Registrada!',
+        body: 'Tu reserva fue enviada a la sucursal. Te avisaremos cuando esté preparada para recoger.',
+      );
+    }
+    return resp;
   }
 
   Future<ApiResponse> cancelReservation(String reservationId) async {

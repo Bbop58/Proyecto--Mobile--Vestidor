@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../config/api_config.dart';
 import '../models/notification_model.dart';
 import 'api_service.dart';
+import 'local_notification_service.dart';
 
 class NotificationService extends ChangeNotifier {
   final ApiService _api;
@@ -9,6 +10,8 @@ class NotificationService extends ChangeNotifier {
   List<NotificationModel> _notifications = [];
   int _unreadCount = 0;
   bool _isLoading = false;
+  final Set<String> _knownNotificationIds = {};
+  bool _isFirstFetch = true;
 
   NotificationService(this._api);
 
@@ -16,7 +19,7 @@ class NotificationService extends ChangeNotifier {
   int get unreadCount => _unreadCount;
   bool get isLoading => _isLoading;
 
-  /// Obtener listado completo de notificaciones
+  /// Obtener listado completo de notificaciones y disparar notificación local si hay nuevas
   Future<void> fetchNotifications() async {
     _isLoading = true;
     notifyListeners();
@@ -29,6 +32,20 @@ class NotificationService extends ChangeNotifier {
             .toList();
 
         _unreadCount = _notifications.where((n) => !n.isRead).length;
+
+        // Disparar notificación nativa en Android/iOS para cada nueva notificación
+        for (final n in _notifications) {
+          if (!_isFirstFetch && !n.isRead && !_knownNotificationIds.contains(n.id)) {
+            LocalNotificationService.showNotification(
+              id: n.id.hashCode,
+              title: n.title,
+              body: n.message,
+              payload: n.referenceId,
+            );
+          }
+          _knownNotificationIds.add(n.id);
+        }
+        _isFirstFetch = false;
       }
     } catch (e) {
       debugPrint('Error fetching notifications: $e');
@@ -43,8 +60,16 @@ class NotificationService extends ChangeNotifier {
     try {
       final response = await _api.getAuth(ApiConfig.unreadNotificationsCountUrl);
       if (response.success && response.data is Map<String, dynamic>) {
-        _unreadCount = (response.data['unread_count'] as num?)?.toInt() ?? 0;
-        notifyListeners();
+        final newCount = (response.data['unread_count'] as num?)?.toInt() ?? 0;
+        if (newCount > _unreadCount) {
+          // Hay nuevas notificaciones no leídas, sincronizar listado para disparar alerta local
+          _unreadCount = newCount;
+          notifyListeners();
+          fetchNotifications();
+        } else {
+          _unreadCount = newCount;
+          notifyListeners();
+        }
       }
     } catch (e) {
       debugPrint('Error fetching unread count: $e');

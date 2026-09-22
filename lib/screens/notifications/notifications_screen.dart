@@ -41,6 +41,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   IconData _getIconForType(String type) {
     switch (type.toUpperCase()) {
+      case 'NEW_PRODUCT':
+        return Icons.auto_awesome_rounded;
       case 'RESERVATION_READY':
         return Icons.inventory_2_rounded;
       case 'PURCHASE_SUCCESS':
@@ -55,6 +57,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Color _getColorForType(String type, BuildContext context) {
     final accent = AppTheme.getAccent(context);
     switch (type.toUpperCase()) {
+      case 'NEW_PRODUCT':
+        return const Color(0xFF8B5CF6); // Violet / Purple
       case 'RESERVATION_READY':
         return const Color(0xFF10B981); // Emerald
       case 'PURCHASE_SUCCESS':
