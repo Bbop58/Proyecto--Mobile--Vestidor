@@ -67,9 +67,11 @@ class Sale {
       codigoVenta: json['numero_recibo']?.toString() ?? json['codigo_venta']?.toString(),
       tipo: json['tipo']?.toString() ?? 'DIGITAL',
       estado: json['estado']?.toString() ?? 'COMPLETADA',
-      total: (json['total'] is num)
-          ? (json['total'] as num).toDouble()
-          : double.tryParse(json['total']?.toString() ?? '0') ?? 0.0,
+      total: (json['monto_total'] is num)
+          ? (json['monto_total'] as num).toDouble()
+          : (json['total'] is num)
+              ? (json['total'] as num).toDouble()
+              : double.tryParse(json['monto_total']?.toString() ?? json['total']?.toString() ?? '0') ?? 0.0,
       metodoPago: json['metodo_pago']?.toString() ?? 'EFECTIVO',
       sucursalNombre: json['sucursal_nombre']?.toString(),
       fechaCreacion: json['created_at']?.toString() ?? json['fecha_venta']?.toString() ?? '',

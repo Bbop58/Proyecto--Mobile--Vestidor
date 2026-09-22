@@ -6,6 +6,7 @@ import '../../services/branch_service.dart';
 import '../../services/cart_service.dart';
 import '../../services/reservation_service.dart';
 import '../../services/paypal_service.dart';
+import '../../services/auth_service.dart';
 import '../../utils/url_helper.dart';
 
 class CartScreen extends StatefulWidget {
@@ -366,10 +367,12 @@ class _CartScreenState extends State<CartScreen> {
                                       })
                                   .toList();
 
+                              final auth = context.read<AuthService>();
                               final capRes = await paypalService.captureOrder(
                                 orderId: orderId,
                                 sucursalId: cart.selectedBranch!.id,
                                 detalles: saleDetails,
+                                clienteId: auth.currentUser?.id,
                                 nota: 'Pago con PayPal Sandbox desde App Móvil',
                               );
 
