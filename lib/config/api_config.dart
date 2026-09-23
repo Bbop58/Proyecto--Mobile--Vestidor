@@ -6,7 +6,7 @@ class ApiConfig {
   static const String _envUrl = String.fromEnvironment('API_URL', defaultValue: '');
 
   // URL de producción por defecto
-  static const String productionUrl = 'https://backend-production-d7d5d.up.railway.app';
+  static const String productionUrl = 'https://proyecto-backend-vestidor-production.up.railway.app';
 
   static String get baseUrl {
     if (_envUrl.isNotEmpty) return _envUrl;
