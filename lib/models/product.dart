@@ -1,4 +1,5 @@
 import 'product_variant.dart';
+import '../config/api_config.dart';
 
 class Product {
   final String id;
@@ -59,7 +60,9 @@ class Product {
       nombre: json['nombre']?.toString() ?? '',
       descripcion: json['descripcion']?.toString(),
       precioBase: parsedPrecio,
-      imagenUrl: json['imagen_url']?.toString(),
+      imagenUrl: (json['imagen_url'] != null && json['imagen_url'].toString().startsWith('/'))
+          ? '${ApiConfig.baseUrl}${json['imagen_url']}'
+          : json['imagen_url']?.toString(),
       categoriaId: json['categoria_id']?.toString(),
       categoriaNombre: catNombre,
       temporada: json['temporada']?.toString(),

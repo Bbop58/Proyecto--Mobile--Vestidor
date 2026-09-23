@@ -1,3 +1,5 @@
+import '../config/api_config.dart';
+
 class ProductVariant {
   final String id;
   final String productoId;
@@ -35,7 +37,9 @@ class ProductVariant {
       color: json['color']?.toString() ?? '',
       codigoSku: (json['sku'] ?? json['codigo_sku'] ?? '')?.toString() ?? '',
       precioAdicional: parsedPrecio,
-      imagenUrl: json['imagen_url']?.toString(),
+      imagenUrl: (json['imagen_url'] != null && json['imagen_url'].toString().startsWith('/'))
+          ? '${ApiConfig.baseUrl}${json['imagen_url']}'
+          : json['imagen_url']?.toString(),
       activo: json['activo'] ?? true,
     );
   }
