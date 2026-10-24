@@ -26,6 +26,9 @@ import 'services/theme_service.dart';
 import 'services/paypal_service.dart';
 import 'services/notification_service.dart';
 import 'services/local_notification_service.dart';
+import 'core/services/connectivity_service.dart';
+import 'core/services/offline_sync_service.dart';
+import 'screens/offline/offline_sync_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,6 +46,9 @@ class MyApp extends StatelessWidget {
         Provider<StorageService>(
           create: (_) => StorageService(),
         ),
+        ChangeNotifierProvider<ConnectivityService>(
+          create: (_) => ConnectivityService(),
+        ),
         ChangeNotifierProvider<ThemeService>(
           create: (context) => ThemeService(context.read<StorageService>()),
         ),
@@ -58,6 +64,16 @@ class MyApp extends StatelessWidget {
           update: (_, api, storage, auth) {
             if (auth != null) return auth;
             return AuthService(api, storage);
+          },
+        ),
+        ChangeNotifierProxyProvider2<ApiService, ConnectivityService, OfflineSyncService>(
+          create: (context) => OfflineSyncService(
+            context.read<ApiService>(),
+            context.read<ConnectivityService>(),
+          ),
+          update: (_, api, conn, sync) {
+            if (sync != null) return sync;
+            return OfflineSyncService(api, conn);
           },
         ),
         ProxyProvider<ApiService, CategoryService>(
@@ -114,6 +130,7 @@ class MyApp extends StatelessWidget {
               AppRoutes.purchases: (context) => const PurchaseHistoryScreen(),
               AppRoutes.branches: (context) => const BranchesPublicScreen(),
               AppRoutes.virtualFitting: (context) => const VirtualFittingScreen(),
+              AppRoutes.offlineSync: (context) => const OfflineSyncScreen(),
             },
           );
         },

@@ -10,7 +10,7 @@ class ApiConfig {
 
   static String get baseUrl {
     if (_envUrl.isNotEmpty) return _envUrl;
-    if (productionUrl.isNotEmpty) return productionUrl;
+    if (kReleaseMode && productionUrl.isNotEmpty) return productionUrl;
 
     if (kIsWeb) return 'http://127.0.0.1:8000';
     return defaultTargetPlatform == TargetPlatform.android
@@ -40,6 +40,10 @@ class ApiConfig {
   static String get paypalConfigUrl => '$apiUrl/payments/paypal/config';
   static String get paypalCreateOrderUrl => '$apiUrl/payments/paypal/create-order';
   static String get paypalCaptureOrderUrl => '$apiUrl/payments/paypal/capture-order';
+
+  // Offline Sync Endpoints (RNF04 / RNF05)
+  static String get syncBatchUrl => '$apiUrl/sync/batch';
+  static String get syncHistoryUrl => '$apiUrl/sync/history';
 
   // Timeouts
   static const Duration connectionTimeout = Duration(seconds: 10);

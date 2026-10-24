@@ -7,6 +7,9 @@ import '../../services/cart_service.dart';
 import '../../services/reservation_service.dart';
 import '../../services/paypal_service.dart';
 import '../../services/auth_service.dart';
+import '../../core/services/connectivity_service.dart';
+import '../../core/services/offline_sync_service.dart';
+import '../../core/database/database_helper.dart';
 import '../../utils/url_helper.dart';
 
 class CartScreen extends StatefulWidget {
@@ -41,7 +44,41 @@ class _CartScreenState extends State<CartScreen> {
           cart.setSelectedBranch(branches.first);
         }
       }
+
+      // Cachear en SQLite
+      try {
+        await DatabaseHelper.instance.cacheBranches(branches.map((b) => {
+          'id': b.id,
+          'nombre': b.nombre,
+          'ciudad': b.ciudad,
+          'direccion': b.direccion,
+          'activa': b.activa ? 1 : 0,
+        }).toList());
+      } catch (_) {}
     } catch (_) {
+      try {
+        final cached = await DatabaseHelper.instance.getCachedBranches();
+        if (cached.isNotEmpty && mounted) {
+          final fallbackBranches = cached.map((c) => Branch(
+            id: c['id'] as String,
+            nombre: c['nombre'] as String,
+            ciudad: c['ciudad'] as String? ?? '',
+            direccion: c['direccion'] as String? ?? '',
+            activa: (c['activa'] == 1),
+          )).toList();
+
+          setState(() {
+            _branches = fallbackBranches;
+            _isLoadingBranches = false;
+          });
+          final cart = context.read<CartService>();
+          if (cart.selectedBranch == null && fallbackBranches.isNotEmpty) {
+            cart.setSelectedBranch(fallbackBranches.first);
+          }
+          return;
+        }
+      } catch (_) {}
+
       if (mounted) {
         setState(() {
           _isLoadingBranches = false;
@@ -73,6 +110,85 @@ class _CartScreenState extends State<CartScreen> {
     }
 
     setState(() => _isSubmitting = true);
+
+    // ── MODO OFFLINE FIRST EN MÓVIL (SQLITE) ──
+    final connectivity = context.read<ConnectivityService>();
+    if (!connectivity.isOnline) {
+      final syncService = context.read<OfflineSyncService>();
+      final clientOpId = await syncService.saveOfflineReservation(
+        sucursalId: cart.selectedBranch!.id,
+        items: cart.items.map((item) => {
+          'variante_id': item.variant.id,
+          'cantidad': item.quantity,
+          'precio_unitario': item.unitPrice,
+        }).toList(),
+        montoTotal: cart.total,
+      );
+
+      cart.clearCart();
+      setState(() => _isSubmitting = false);
+
+      if (mounted) {
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppTheme.getCardBg(ctx),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.borderRadiusLarge),
+            ),
+            title: Row(
+              children: [
+                const Icon(Icons.offline_pin_rounded, color: Colors.amber, size: 28),
+                const SizedBox(width: 10),
+                Text(
+                  '¡Reserva Guardada Offline!',
+                  style: TextStyle(
+                    color: AppTheme.getTextPrimary(ctx),
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Sin conexión al servidor central. Tu reserva ha sido guardada de forma segura en la base de datos local SQLite de tu dispositivo móvil.',
+                  style: TextStyle(color: AppTheme.getTextSecondary(ctx)),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'ID Operación: ${clientOpId.substring(0, 8).toUpperCase()}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amber),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Se sincronizará automáticamente al restablecerse la conectividad a Internet.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Entendido', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
 
     try {
       final resService = context.read<ReservationService>();

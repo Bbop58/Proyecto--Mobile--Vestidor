@@ -1,8 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../models/category.dart';
 import '../../models/product.dart';
+import '../../models/product_variant.dart';
+import '../../core/database/database_helper.dart';
 import '../../services/cart_service.dart';
 import '../../services/category_service.dart';
 import '../../services/product_service.dart';
@@ -73,6 +76,28 @@ class _CatalogScreenState extends State<CatalogScreen> {
             : null,
       );
 
+      // Cachear en SQLite local
+      try {
+        await DatabaseHelper.instance.cacheProducts(products.map((p) => {
+          'id': p.id,
+          'nombre': p.nombre,
+          'categoria': p.categoriaNombre ?? '',
+          'precio_base': p.precioBase,
+          'imagen_url': p.imagenUrl ?? '',
+          'variantes_json': jsonEncode(p.variantes.map((v) => {
+            'id': v.id,
+            'producto_id': v.productoId,
+            'sku': v.codigoSku,
+            'talla': v.talla,
+            'color': v.color,
+            'precio_extra': v.precioAdicional,
+            'imagen_url': v.imagenUrl,
+          }).toList()),
+        }).toList());
+      } catch (e) {
+        debugPrint('Error al guardar caché en SQLite: $e');
+      }
+
       if (mounted) {
         setState(() {
           _categories = categories;
@@ -82,6 +107,49 @@ class _CatalogScreenState extends State<CatalogScreen> {
         });
       }
     } catch (e) {
+      // Fallback: cargar catálogo desde la base de datos local SQLite
+      try {
+        final cached = await DatabaseHelper.instance.getCachedProducts();
+        if (cached.isNotEmpty) {
+          final fallbackProducts = cached.map((c) {
+            List<ProductVariant> vars = [];
+            try {
+              final rawV = jsonDecode(c['variantes_json'] as String) as List;
+              vars = rawV.map((v) => ProductVariant(
+                id: v['id'] ?? '',
+                productoId: (v['producto_id'] ?? c['id'] ?? '').toString(),
+                talla: v['talla'] ?? '',
+                color: v['color'] ?? '',
+                codigoSku: v['sku'] ?? '',
+                precioAdicional: (v['precio_extra'] as num?)?.toDouble() ?? 0.0,
+                imagenUrl: v['imagen_url'] as String?,
+                activo: true,
+              )).toList();
+            } catch (_) {}
+
+            return Product(
+              id: c['id'] as String,
+              codigo: (c['id'] as String).length >= 8 ? (c['id'] as String).substring(0, 8).toUpperCase() : (c['id'] as String),
+              nombre: c['nombre'] as String,
+              precioBase: (c['precio_base'] as num).toDouble(),
+              categoriaNombre: c['categoria'] as String?,
+              imagenUrl: c['imagen_url'] as String?,
+              activo: true,
+              variantes: vars,
+            );
+          }).toList();
+
+          if (mounted) {
+            setState(() {
+              _products = fallbackProducts;
+              _isLoading = false;
+              _errorMessage = null;
+            });
+            return;
+          }
+        }
+      } catch (_) {}
+
       if (mounted) {
         setState(() {
           _errorMessage = 'Error al cargar el catálogo: ${e.toString()}';

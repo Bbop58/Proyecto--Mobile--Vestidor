@@ -9,4 +9,5 @@ class AppRoutes {
   static const String purchases = '/purchases';
   static const String branches = '/branches';
   static const String virtualFitting = '/virtual-fitting';
+  static const String offlineSync = '/offline-sync';
 }

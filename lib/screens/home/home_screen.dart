@@ -475,6 +475,15 @@ class _HomeScreenState extends State<HomeScreen>
                             Divider(height: 1, indent: 56, color: border),
                             _buildActionTile(
                               context: context,
+                              icon: Icons.cloud_sync_outlined,
+                              label: 'Sincronización Offline (SQLite)',
+                              subtitle: 'Cola de transacciones locales y estado de red',
+                              color: Colors.amber.shade700,
+                              onTap: () => Navigator.pushNamed(context, AppRoutes.offlineSync),
+                            ),
+                            Divider(height: 1, indent: 56, color: border),
+                            _buildActionTile(
+                              context: context,
                               icon: Icons.edit_outlined,
                               label: 'Editar Perfil',
                               subtitle: 'Actualiza tu nombre y correo',
