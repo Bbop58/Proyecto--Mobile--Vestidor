@@ -2,18 +2,18 @@ import 'package:flutter/material.dart';
 
 /// Sistema de Diseño 60-30-10 para Flutter Mobile (Light & Dark Mode)
 class AppTheme {
-  // ── PALETA MODO CLARO ──────────────────────────────────────────────────────
-  static const Color lightBg          = Color(0xFFEFECE6); // Warm off-white
-  static const Color lightSurface     = Color(0xFFE5E0D6); // Warm surface
-  static const Color lightCard        = Color(0xFFFFFFFF); // Clean white card
-  static const Color lightInput       = Color(0xFFFFFFFF); // Clean white input
-  static const Color lightTextPrimary = Color(0xFF132537); // Deep navy
-  static const Color lightTextSecondary = Color(0xFF395267); // Slate navy muted
-  static const Color lightTextMuted   = Color(0xFF627B8E); // Dim slate
-  static const Color lightBorder      = Color(0x24132537); // rgba(19, 37, 55, 0.14)
-  static const Color lightAccent      = Color(0xFFD97706); // Amber
-  static const Color lightAccentGlow  = Color(0x1FD97706); // rgba(217, 119, 6, 0.12)
-  static const Color lightAccentBorder= Color(0x40D97706); // rgba(217, 119, 6, 0.25)
+  // ── PALETA MODO CLARO (Stitch Porcelain Canvas) ───────────────────────────
+  static const Color lightBg          = Color(0xFFF8FAFC); // Clean Slate 50 Porcelain
+  static const Color lightSurface     = Color(0xFFF1F5F9); // Clean Slate 100 Surface
+  static const Color lightCard        = Color(0xFFFFFFFF); // Pure White Card
+  static const Color lightInput       = Color(0xFFFFFFFF); // Pure White Input
+  static const Color lightTextPrimary = Color(0xFF0F172A); // Slate 900 Graphite
+  static const Color lightTextSecondary = Color(0xFF475569); // Slate 600
+  static const Color lightTextMuted   = Color(0xFF94A3B8); // Slate 400
+  static const Color lightBorder      = Color(0xFFE2E8F0); // Crisp Slate 200 Border
+  static const Color lightAccent      = Color(0xFF4F46E5); // Modern Executive Indigo
+  static const Color lightAccentGlow  = Color(0x1F4F46E5); // rgba(79, 70, 229, 0.12)
+  static const Color lightAccentBorder= Color(0x404F46E5); // rgba(79, 70, 229, 0.25)
 
   // ── PALETA MODO OSCURO ─────────────────────────────────────────────────────
   static const Color darkBg           = Color(0xFF0A1120); // Deep Navy Dark
