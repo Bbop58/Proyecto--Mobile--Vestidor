@@ -48,6 +48,12 @@ class ApiConfig {
   // Chatbot Inteligente con IA (Gemini Flash)
   static String get chatbotMessageUrl => '$apiUrl/chatbot/message';
 
+  // Wallet Endpoints (Plan 14 - Fondos Offline y Prepago)
+  static String get walletMeUrl => '$apiUrl/wallet/me';
+  static String get walletHistoryUrl => '$apiUrl/wallet/history';
+  static String get walletTopupPaypalUrl => '$apiUrl/wallet/topup/paypal';
+  static String get walletSyncOfflineUrl => '$apiUrl/wallet/sync-offline-orders';
+
   // Timeouts
   static const Duration connectionTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 10);

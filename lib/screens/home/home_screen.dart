@@ -9,6 +9,8 @@ import 'branches_public_screen.dart';
 import 'purchase_history_screen.dart';
 import '../shop/virtual_fitting_screen.dart';
 import '../notifications/notifications_screen.dart';
+import '../wallet/wallet_screen.dart';
+import '../../services/wallet_service.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -36,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen>
     _animController.forward();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<NotificationService>().fetchUnreadCount();
+      context.read<WalletService>().fetchWallet();
     });
   }
 
@@ -436,6 +439,23 @@ class _HomeScreenState extends State<HomeScreen>
                         decoration: AppTheme.cardDecorationOf(context),
                         child: Column(
                           children: [
+                            Consumer<WalletService>(
+                              builder: (context, ws, _) {
+                                final s = ws.saldo;
+                                return _buildActionTile(
+                                  context: context,
+                                  icon: Icons.account_balance_wallet_rounded,
+                                  label: 'Mi Billetera Virtual (Prepago)',
+                                  subtitle: 'Saldo disponible: Bs. ${s.toStringAsFixed(2)} • Compras offline',
+                                  color: const Color(0xFF0070BA),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => const WalletScreen()),
+                                  ),
+                                );
+                              },
+                            ),
+                            Divider(height: 1, indent: 56, color: border),
                             _buildActionTile(
                               context: context,
                               icon: Icons.receipt_long_rounded,

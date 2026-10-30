@@ -20,9 +20,62 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
     );
+  }
+
+  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await _createWalletTables(db);
+    }
+  }
+
+  Future<void> _createWalletTables(Database db) async {
+    // 4. Billetera virtual prepago local (Plan 14)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS local_wallet (
+        user_id TEXT PRIMARY KEY,
+        saldo REAL NOT NULL DEFAULT 0.0,
+        nonce INTEGER NOT NULL DEFAULT 0,
+        firma TEXT,
+        moneda TEXT DEFAULT 'BOB',
+        updated_at TEXT
+      )
+    ''');
+
+    // 5. Historial de transacciones de billetera cacheadas localmente
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS local_wallet_transactions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        monto REAL NOT NULL,
+        saldo_anterior REAL,
+        saldo_posterior REAL,
+        descripcion TEXT,
+        fecha TEXT NOT NULL
+      )
+    ''');
+
+    // 6. Cola específica de órdenes pagadas con saldo wallet offline
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS offline_wallet_orders (
+        client_operation_id TEXT PRIMARY KEY,
+        cliente_id TEXT,
+        sucursal_id TEXT NOT NULL,
+        monto_total REAL NOT NULL,
+        nonce_usado INTEGER,
+        firma_usada TEXT,
+        items_json TEXT NOT NULL,
+        fecha_local TEXT NOT NULL,
+        status TEXT DEFAULT 'PENDIENTE',
+        server_receipt TEXT,
+        error_detail TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   Future<void> _createDB(Database db, int version) async {
@@ -71,6 +124,8 @@ class DatabaseHelper {
         created_at TEXT NOT NULL
       )
     ''');
+
+    await _createWalletTables(db);
   }
 
   // ── SUCURSALES ──
@@ -169,5 +224,127 @@ class DatabaseHelper {
       ['LOCAL_PENDIENTE'],
     ));
     return count ?? 0;
+  }
+
+  // ── BILLETERA VIRTUAL Y TRANSACCIONES LOCALES (PLAN 14) ──
+  Future<void> saveLocalWallet({
+    required String userId,
+    required double saldo,
+    required int nonce,
+    required String firma,
+    String moneda = 'BOB',
+  }) async {
+    final db = await instance.database;
+    await db.insert(
+      'local_wallet',
+      {
+        'user_id': userId,
+        'saldo': saldo,
+        'nonce': nonce,
+        'firma': firma,
+        'moneda': moneda,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<Map<String, dynamic>?> getLocalWallet(String userId) async {
+    final db = await instance.database;
+    final results = await db.query(
+      'local_wallet',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+      limit: 1,
+    );
+    if (results.isNotEmpty) return results.first;
+    return null;
+  }
+
+  Future<void> updateLocalWalletBalance({
+    required String userId,
+    required double nuevoSaldo,
+    required int nuevoNonce,
+  }) async {
+    final db = await instance.database;
+    await db.update(
+      'local_wallet',
+      {
+        'saldo': nuevoSaldo,
+        'nonce': nuevoNonce,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
+  }
+
+  Future<void> saveLocalWalletTransactions(List<Map<String, dynamic>> txs) async {
+    final db = await instance.database;
+    final batch = db.batch();
+    for (final tx in txs) {
+      batch.insert(
+        'local_wallet_transactions',
+        {
+          'id': tx['id'],
+          'user_id': tx['user_id'] ?? '',
+          'tipo': tx['tipo'],
+          'monto': (tx['monto'] as num).toDouble(),
+          'saldo_anterior': (tx['saldo_anterior'] as num?)?.toDouble() ?? 0.0,
+          'saldo_posterior': (tx['saldo_posterior'] as num?)?.toDouble() ?? 0.0,
+          'descripcion': tx['descripcion'] ?? '',
+          'fecha': tx['created_at'] ?? tx['fecha'] ?? DateTime.now().toUtc().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<Map<String, dynamic>>> getLocalWalletTransactions(String userId) async {
+    final db = await instance.database;
+    return await db.query(
+      'local_wallet_transactions',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+      orderBy: 'fecha DESC',
+    );
+  }
+
+  Future<void> insertOfflineWalletOrder(Map<String, dynamic> order) async {
+    final db = await instance.database;
+    await db.insert(
+      'offline_wallet_orders',
+      order,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingOfflineWalletOrders() async {
+    final db = await instance.database;
+    return await db.query(
+      'offline_wallet_orders',
+      where: 'status = ?',
+      whereArgs: ['PENDIENTE'],
+      orderBy: 'created_at ASC',
+    );
+  }
+
+  Future<void> updateOfflineWalletOrderStatus(String clientOpId, {
+    required String status,
+    String? serverReceipt,
+    String? errorDetail,
+  }) async {
+    final db = await instance.database;
+    await db.update(
+      'offline_wallet_orders',
+      {
+        'status': status,
+        'server_receipt': serverReceipt,
+        'error_detail': errorDetail,
+      },
+      where: 'client_operation_id = ?',
+      whereArgs: [clientOpId],
+    );
   }
 }

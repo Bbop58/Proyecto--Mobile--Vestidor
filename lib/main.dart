@@ -31,6 +31,8 @@ import 'core/services/offline_sync_service.dart';
 import 'screens/offline/offline_sync_screen.dart';
 import 'services/chatbot_service.dart';
 import 'screens/chatbot/chatbot_screen.dart';
+import 'services/wallet_service.dart';
+import 'screens/wallet/wallet_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -119,6 +121,17 @@ class MyApp extends StatelessWidget {
             return ChatbotService(api);
           },
         ),
+        ChangeNotifierProxyProvider3<ApiService, ConnectivityService, StorageService, WalletService>(
+          create: (context) => WalletService(
+            context.read<ApiService>(),
+            context.read<ConnectivityService>(),
+            context.read<StorageService>(),
+          ),
+          update: (_, api, conn, storage, wallet) {
+            if (wallet != null) return wallet;
+            return WalletService(api, conn, storage);
+          },
+        ),
       ],
       child: Consumer2<AuthService, ThemeService>(
         builder: (context, auth, themeService, _) {
@@ -141,6 +154,7 @@ class MyApp extends StatelessWidget {
               AppRoutes.virtualFitting: (context) => const VirtualFittingScreen(),
               AppRoutes.offlineSync: (context) => const OfflineSyncScreen(),
               AppRoutes.chatbot: (context) => const ChatbotScreen(),
+              AppRoutes.wallet: (context) => const WalletScreen(),
             },
           );
         },

@@ -12,6 +12,8 @@ import '../../core/services/connectivity_service.dart';
 import '../../core/services/offline_sync_service.dart';
 import '../../core/database/database_helper.dart';
 import '../../utils/url_helper.dart';
+import '../../services/wallet_service.dart';
+import '../wallet/wallet_screen.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -29,6 +31,9 @@ class _CartScreenState extends State<CartScreen> {
   void initState() {
     super.initState();
     _loadBranches();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<WalletService>().fetchWallet(silent: true);
+    });
   }
 
   Future<void> _loadBranches() async {
@@ -304,6 +309,298 @@ class _CartScreenState extends State<CartScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error inesperado: ${e.toString()}'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleWalletPayment() async {
+    final cart = context.read<CartService>();
+    final walletService = context.read<WalletService>();
+
+    if (cart.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('El carrito está vacío'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
+
+    if (cart.selectedBranch == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Por favor selecciona una sucursal para despachar tu compra'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
+
+    final total = cart.total;
+    final saldoActual = walletService.saldo;
+
+    if (saldoActual < total) {
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppTheme.getCardBg(ctx),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: const [
+              Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 28),
+              SizedBox(width: 10),
+              Text('Saldo Insuficiente', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Tu saldo en la Billetera Virtual es de Bs. ${saldoActual.toStringAsFixed(2)}, pero el total de tu carrito es Bs. ${total.toStringAsFixed(2)}.',
+                style: TextStyle(color: AppTheme.getTextSecondary(ctx)),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Faltan: Bs. ${(total - saldoActual).toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.errorColor),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Puedes recargar saldo mediante PayPal o pagar en efectivo directamente en caja.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Volver'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const WalletScreen()),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0070BA),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Recargar Billetera'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // Modal de confirmación de débito
+    final isOnline = context.read<ConnectivityService>().isOnline;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.getCardBg(ctx),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0070BA).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.account_balance_wallet_rounded, color: Color(0xFF0070BA), size: 24),
+            ),
+            const SizedBox(width: 10),
+            const Text('Confirmar Pago', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '¿Deseas pagar esta orden debitando directamente de tus fondos prepago de la Billetera Virtual?',
+              style: TextStyle(color: AppTheme.getTextSecondary(ctx)),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.getBg(ctx),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.getBorder(ctx)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Total a Descontar:', style: TextStyle(fontSize: 13)),
+                      Text('Bs. ${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0070BA))),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Saldo Restante:', style: TextStyle(fontSize: 13)),
+                      Text('Bs. ${(saldoActual - total).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.successColor)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+                  size: 16,
+                  color: isOnline ? Colors.green : Colors.amber,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    isOnline
+                        ? 'Modo Online: Se sincronizará inmediatamente con el servidor central.'
+                        : 'Modo Offline: Se descontará de tu SQLite local seguro y se sincronizará al volver la red.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isOnline ? Colors.green : Colors.amber,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0070BA),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Autorizar Pago'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final items = cart.items.map((i) => {
+        'variante_id': i.variant.id,
+        'cantidad': i.quantity,
+        'precio_unitario': i.unitPrice,
+        'nombre': '${i.product.nombre} (${i.variant.talla}/${i.variant.color})',
+      }).toList();
+
+      final result = await walletService.payWithWallet(
+        sucursalId: cart.selectedBranch!.id,
+        items: items,
+        totalAmount: total,
+      );
+
+      final clientOpId = result['client_operation_id']?.toString() ?? 'OP-WALLET';
+      final isOfflineQueued = result['offline_queued'] == true;
+
+      cart.clearCart();
+      setState(() => _isSubmitting = false);
+
+      await LocalNotificationService.showNotification(
+        title: isOfflineQueued ? '¡Pago Offline con Billetera!' : '¡Compra con Billetera Confirmada!',
+        body: 'Se debitaron Bs. ${total.toStringAsFixed(2)} de tu Billetera Virtual (ID: ${clientOpId.length >= 8 ? clientOpId.substring(0, 8).toUpperCase() : clientOpId}).',
+      );
+
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppTheme.getCardBg(ctx),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, color: AppTheme.successColor, size: 28),
+              const SizedBox(width: 10),
+              Text(
+                isOfflineQueued ? '¡Pago Offline Guardado!' : '¡Compra Exitosa!',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isOfflineQueued
+                    ? 'Tu compra ha sido pagada exitosamente usando tus fondos locales en SQLite.'
+                    : 'Tu compra ha sido procesada y registrada en el servidor central.',
+                style: TextStyle(color: AppTheme.getTextSecondary(ctx)),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0070BA).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF0070BA).withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Operación: #${clientOpId.length >= 8 ? clientOpId.substring(0, 8).toUpperCase() : clientOpId}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0070BA), fontSize: 13),
+                    ),
+                    const SizedBox(height: 4),
+                    Text('Total Pagado: Bs. ${total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12)),
+                    Text('Nuevo Saldo Billetera: Bs. ${(saldoActual - total).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.successColor)),
+                  ],
+                ),
+              ),
+              if (isOfflineQueued) ...[
+                const SizedBox(height: 10),
+                const Text(
+                  '⚡ En cuanto el dispositivo recupere conexión a Internet, la venta se sincronizará automáticamente contra el inventario central.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Aceptar', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      setState(() => _isSubmitting = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
             backgroundColor: AppTheme.errorColor,
           ),
         );
@@ -1013,6 +1310,84 @@ class _CartScreenState extends State<CartScreen> {
                 ),
 
                 const SizedBox(height: 24),
+
+                // Botón Billetera Virtual (Prepago - Funciona Online y Offline)
+                Consumer<WalletService>(
+                  builder: (context, ws, _) {
+                    final saldo = ws.saldo;
+                    final hasFunds = saldo >= cart.total;
+                    final conn = context.watch<ConnectivityService>();
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _isSubmitting ? null : _handleWalletPayment,
+                          icon: _isSubmitting
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Icon(Icons.account_balance_wallet_rounded),
+                          label: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                conn.isOnline ? 'Pagar con Billetera Virtual' : 'Pagar con Billetera (Offline)',
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.25),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'Bs. ${saldo.toStringAsFixed(2)}',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: hasFunds ? const Color(0xFF0F766E) : Colors.grey.shade600,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: hasFunds ? 3 : 0,
+                          ),
+                        ),
+                        if (!hasFunds)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4, bottom: 4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'Saldo insuficiente para esta compra. ',
+                                  style: TextStyle(fontSize: 11, color: textSecondary),
+                                ),
+                                GestureDetector(
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => const WalletScreen()),
+                                  ),
+                                  child: const Text(
+                                    'Recargar aquí',
+                                    style: TextStyle(fontSize: 11, color: Color(0xFF0070BA), fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                      ],
+                    );
+                  },
+                ),
 
                 // Botón 1: Comprar Online Directo con PayPal
                 ElevatedButton.icon(

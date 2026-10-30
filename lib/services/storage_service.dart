@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class StorageService {
   static const _accessTokenKey = 'access_token';
   static const _refreshTokenKey = 'refresh_token';
+  static const _userIdKey = 'user_id';
 
   final FlutterSecureStorage _storage;
   final Map<String, String> _memoryCache = {};
@@ -100,6 +101,33 @@ class StorageService {
     } catch (e) {
       debugPrint('Error borrando refresh token: $e');
     }
+  }
+
+  // User ID
+  Future<String?> getUserId() async {
+    if (_memoryCache.containsKey(_userIdKey)) {
+      return _memoryCache[_userIdKey];
+    }
+    try {
+      final uid = await _storage.read(key: _userIdKey).timeout(
+            const Duration(seconds: 1),
+            onTimeout: () => null,
+          );
+      if (uid != null && uid.isNotEmpty) {
+        _memoryCache[_userIdKey] = uid;
+        return uid;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> setUserId(String userId) async {
+    _memoryCache[_userIdKey] = userId;
+    try {
+      await _storage
+          .write(key: _userIdKey, value: userId)
+          .timeout(const Duration(seconds: 1));
+    } catch (_) {}
   }
 
   // Limpiar todo
