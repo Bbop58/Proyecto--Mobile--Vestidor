@@ -7,6 +7,7 @@ import 'api_service.dart';
 import 'storage_service.dart';
 import '../core/services/connectivity_service.dart';
 import '../core/database/database_helper.dart';
+import 'local_notification_service.dart';
 
 class WalletService extends ChangeNotifier {
   final ApiService _apiService;
@@ -301,6 +302,21 @@ class WalletService extends ChangeNotifier {
             status: status,
             serverReceipt: receipt,
             errorDetail: err,
+          );
+        }
+
+        final successOrders = results.where((r) => r['status'] == 'CONFIRMED' || r['status'] == 'OK').toList();
+        if (successOrders.isNotEmpty) {
+          final receipts = successOrders
+              .map((r) => r['receipt_number']?.toString() ?? '')
+              .where((n) => n.isNotEmpty)
+              .join(', ');
+          LocalNotificationService.showNotification(
+            id: 9993,
+            title: '✅ Compras Offline Sincronizadas',
+            body: receipts.isNotEmpty
+                ? 'Se confirmaron ${successOrders.length} compra(s). Recibo(s): $receipts'
+                : 'Tus compras offline se reconciliaron con éxito en la tienda central.',
           );
         }
 

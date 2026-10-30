@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../config/api_config.dart';
+import '../core/database/database_helper.dart';
 import 'api_service.dart';
+import 'storage_service.dart';
 
 class ChatMessageModel {
   final String role; // 'user' | 'model'
@@ -123,11 +125,11 @@ class ChatbotService extends ChangeNotifier {
         _isOfflineMode = false;
       } else {
         // Conmutación transparente al motor heurístico offline
-        _handleOfflineFallback(trimmed, tenantSlug);
+        await _handleOfflineFallback(trimmed, tenantSlug);
       }
     } catch (e) {
       // Conmutación transparente al motor heurístico offline ante corte de red o timeout
-      _handleOfflineFallback(trimmed, tenantSlug);
+      await _handleOfflineFallback(trimmed, tenantSlug);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -136,13 +138,82 @@ class ChatbotService extends ChangeNotifier {
 
   /// Motor Heurístico Offline Ultraligero (< 5ms)
   /// Responde de forma precisa ante cortes de señal sin modelos pesados ni sobrecargar el teléfono
-  void _handleOfflineFallback(String rawText, String? tenantSlug) {
+  Future<void> _handleOfflineFallback(String rawText, String? tenantSlug) async {
     _isOfflineMode = true;
     final msg = rawText.toLowerCase();
 
     String reply;
 
-    if (msg.contains('recomiend') ||
+    if (msg.contains('saldo') ||
+        msg.contains('billetera') ||
+        msg.contains('plata') ||
+        msg.contains('wallet') ||
+        msg.contains('cuanto tengo')) {
+      double saldoLocal = 0.0;
+      try {
+        final storage = StorageService();
+        final userId = await storage.getUserId();
+        if (userId != null && userId.isNotEmpty) {
+          final wallet = await DatabaseHelper.instance.getLocalWallet(userId);
+          if (wallet != null) {
+            saldoLocal = (wallet['saldo'] as num?)?.toDouble() ?? 0.0;
+          }
+        }
+      } catch (e) {
+        debugPrint('Error leyendo billetera local offline: $e');
+      }
+
+      reply =
+          '💳 **Saldo en Billetera Offline (SQLite Local)**\n\n'
+          'Dispones de **${saldoLocal.toStringAsFixed(2)} Bs.** almacenados de forma segura con sellado criptográfico HMAC-SHA256 en este dispositivo.\n\n'
+          'Puedes usar este saldo para pagar en el carrito en modo avión sin necesidad de señal.';
+    } else if (msg.contains('mis compras') ||
+        msg.contains('que compre') ||
+        msg.contains('mis pedidos') ||
+        msg.contains('recibo') ||
+        msg.contains('historial')) {
+      int pending = 0;
+      try {
+        final orders = await DatabaseHelper.instance.getPendingOfflineWalletOrders();
+        pending = orders.length;
+      } catch (_) {}
+
+      reply =
+          '🛍️ **Mis Compras en Modo Offline**\n\n'
+          'Actualmente tienes **$pending compra(s) offline** registradas localmente en cola de sincronización segura (Store-and-Forward).\n\n'
+          'Tan pronto tu teléfono recupere la conexión a internet, se enviarán automáticamente a la tienda central y recibirás una notificación con tus números de recibo oficiales.';
+    } else if (msg.contains('como comprar') ||
+        msg.contains('compras offline') ||
+        msg.contains('sin internet') ||
+        msg.contains('modo avion')) {
+      reply =
+          '✈️ **¿Cómo comprar con Billetera sin Internet?**\n\n'
+          '1. Añade tus prendas favoritas al carrito.\n'
+          '2. Al pagar, selecciona **"Pagar con Billetera (Offline / Online)"**.\n'
+          '3. Tu balance local se descuenta de inmediato y se genera un comprobante criptográfico seguro.\n'
+          '4. ¡Listo! Al volver a conectarte a internet, el sistema sincroniza automáticamente con el Kardex central.';
+    } else if (msg.contains('talla') ||
+        msg.contains('medida') ||
+        msg.contains('como se mi talla') ||
+        msg.contains('guia de tallas')) {
+      reply =
+          '📏 **Guía Métrica de Tallas (Moda Urbana & Formal)**\n\n'
+          'Para encontrar tu talla ideal, mide tu contorno con una cinta métrica:\n'
+          '• **Talla S:** Pecho 88-94 cm | Cintura 74-80 cm\n'
+          '• **Talla M:** Pecho 96-102 cm | Cintura 82-88 cm\n'
+          '• **Talla L:** Pecho 104-110 cm | Cintura 90-96 cm\n'
+          '• **Talla XL:** Pecho 112-118 cm | Cintura 98-104 cm\n\n'
+          '💡 *Tip:* Si eliges prendas con corte *Oversize*, tu talla habitual te brindará la caída holgada perfecta.';
+    } else if (msg.contains('cuidado') ||
+        msg.contains('lavar') ||
+        msg.contains('planchar') ||
+        msg.contains('tela')) {
+      reply =
+          '🧼 **Guía de Cuidado de Prendas y Telas**\n\n'
+          '• **Algodón Peinado / Poleras:** Lavar con agua fría (< 30°C) para evitar encogimiento. Secar a la sombra.\n'
+          '• **Chaquetas y Pantalones Denim:** Lavar siempre del revés para preservar el tinte índigo original.\n'
+          '• **Prendas con Estampados:** Planchar siempre por el reverso a temperatura media.';
+    } else if (msg.contains('recomiend') ||
         msg.contains('gust') ||
         msg.contains('para mi') ||
         msg.contains('suger') ||

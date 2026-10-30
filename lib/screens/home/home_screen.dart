@@ -11,6 +11,7 @@ import '../shop/virtual_fitting_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../wallet/wallet_screen.dart';
 import '../../services/wallet_service.dart';
+import '../../core/services/connectivity_service.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -175,6 +176,48 @@ class _HomeScreenState extends State<HomeScreen>
                                   color: textPrimary,
                                 ),
                               ),
+                              const SizedBox(width: 8),
+                              // Pill de Conectividad Online / Offline
+                              Consumer<ConnectivityService>(
+                                builder: (context, conn, _) {
+                                  final isOnline = conn.isOnline;
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: isOnline
+                                          ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                                          : const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: isOnline ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          width: 6,
+                                          height: 6,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: isOnline ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          isOnline ? 'Online' : 'Offline',
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w700,
+                                            color: isOnline ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
                             ],
                           ),
                           Row(
@@ -269,6 +312,42 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         ],
                       ),
+                    ),
+                  ),
+
+                  // Alerta reactiva de Modo Offline
+                  SliverToBoxAdapter(
+                    child: Consumer<ConnectivityService>(
+                      builder: (context, conn, _) {
+                        if (conn.isOnline) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFF59E0B), width: 1.2),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.wifi_off_rounded, color: Color(0xFFF59E0B), size: 20),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    'Modo Offline Activo: Puedes explorar el catálogo en caché, pagar con tu Billetera Prepago y consultar al Chatbot Local.',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFFD97706),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
 
