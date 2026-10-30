@@ -173,7 +173,10 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                         itemBuilder: (context, index) {
                           final sale = _sales[index];
                           final estadoColor = _estadoColor(sale.estado);
-                          return Container(
+                          return InkWell(
+                            onTap: () => _showOfficialReceipt(sale),
+                            borderRadius: BorderRadius.circular(AppTheme.borderRadiusLarge),
+                            child: Container(
                             decoration: BoxDecoration(
                               color: cardBg,
                               borderRadius:
@@ -334,10 +337,162 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                                 ],
                               ],
                             ),
-                          );
+                          ),
+                        );
                         },
                       ),
                     ),
+    );
+  }
+
+  void _showOfficialReceipt(Sale sale) {
+    final textPrimary = AppTheme.getTextPrimary(context);
+    final textSecondary = AppTheme.getTextSecondary(context);
+    final cardBg = AppTheme.getCardBg(context);
+    final accent = AppTheme.getAccent(context);
+    final border = AppTheme.getBorder(context);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: MediaQuery.of(ctx).size.height * 0.82,
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('FashionStore Retail', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textPrimary)),
+                    Text('NIT: 1028374029 · Razón Social FashionStore SRL', style: TextStyle(fontSize: 11, color: textSecondary)),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+            const Divider(height: 20),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: accent.withValues(alpha: 0.2)),
+              ),
+              child: Column(
+                children: [
+                  Text('NOTA DE VENTA OFICIAL', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: accent, letterSpacing: 0.5)),
+                  const SizedBox(height: 4),
+                  Text(sale.codigoVenta ?? 'VTA-OFICIAL', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: textPrimary)),
+                  const SizedBox(height: 4),
+                  Text('${_formatDate(sale.fechaCreacion)} · ${sale.sucursalNombre ?? "Sucursal Principal"}', style: TextStyle(fontSize: 12, color: textSecondary)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text('Detalle de Prendas', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textPrimary)),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.separated(
+                itemCount: sale.detalles.length,
+                separatorBuilder: (sepCtx, sepIdx) => Divider(color: border.withValues(alpha: 0.5), height: 12),
+                itemBuilder: (itemCtx, i) {
+                  final d = sale.detalles[i];
+                  return Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(color: border.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(6)),
+                        child: Text('${d.cantidad}x', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: textPrimary)),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(d.productoNombre ?? 'Prenda', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: textPrimary)),
+                            Text('Talla: ${d.talla ?? "-"} · Color: ${d.color ?? "-"}', style: TextStyle(fontSize: 11, color: textSecondary)),
+                          ],
+                        ),
+                      ),
+                      Text('Bs. ${d.subtotal.toStringAsFixed(2)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textPrimary)),
+                    ],
+                  );
+                },
+              ),
+            ),
+            const Divider(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Método de Pago:', style: TextStyle(fontSize: 13, color: textSecondary)),
+                Text(sale.metodoPago, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textPrimary)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('TOTAL PAGADO:', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: textPrimary)),
+                Text('Bs. ${sale.total.toStringAsFixed(2)}', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: accent)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: border.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.verified_user_rounded, size: 14, color: AppTheme.successColor),
+                      const SizedBox(width: 6),
+                      Text('Garantía Retail: 30 Días para Cambios', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: textPrimary)),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text('Presenta este comprobante digital en cualquier sucursal con la prenda limpia y su etiqueta original.', style: TextStyle(fontSize: 10, color: textSecondary)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(ctx),
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text('Cerrar Comprobante'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

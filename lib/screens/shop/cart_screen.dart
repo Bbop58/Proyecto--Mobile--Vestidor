@@ -7,6 +7,7 @@ import '../../services/cart_service.dart';
 import '../../services/reservation_service.dart';
 import '../../services/paypal_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/local_notification_service.dart';
 import '../../core/services/connectivity_service.dart';
 import '../../core/services/offline_sync_service.dart';
 import '../../core/database/database_helper.dart';
@@ -499,6 +500,14 @@ class _CartScreenState extends State<CartScreen> {
                                 final venta = capRes['venta'] as Map<String, dynamic>;
                                 final numRecibo = venta['numero_recibo'] ?? 'VTA-CONFIRMADA';
                                 final captureId = capRes['paypal_capture_id'] ?? orderId;
+
+                                // Disparar Notificación Push Nativa en el celular
+                                LocalNotificationService.showNotification(
+                                  id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+                                  title: '¡Compra Confirmada! 🎉',
+                                  body: 'Nota de Venta #$numRecibo emitida con éxito. Total: ${cart.total.toStringAsFixed(2)} Bs.',
+                                  payload: 'recibo_$numRecibo',
+                                );
 
                                 cart.clearCart();
                                 if (ctx.mounted) Navigator.pop(ctx); // Cierra bottom sheet
