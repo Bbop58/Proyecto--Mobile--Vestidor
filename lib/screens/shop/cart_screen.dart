@@ -801,7 +801,7 @@ class _CartScreenState extends State<CartScreen> {
                                 // Disparar Notificación Push Nativa en el celular
                                 LocalNotificationService.showNotification(
                                   id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-                                  title: '¡Compra Confirmada! 🎉',
+                                  title: '¡Compra Confirmada!',
                                   body: 'Nota de Venta #$numRecibo emitida con éxito. Total: ${cart.total.toStringAsFixed(2)} Bs.',
                                   payload: 'recibo_$numRecibo',
                                 );

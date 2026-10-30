@@ -41,7 +41,7 @@ class ConnectivityService extends ChangeNotifier {
         _wasOffline = true;
         LocalNotificationService.showNotification(
           id: 9991,
-          title: '📡 Modo Sin Conexión Activado',
+          title: 'Modo Sin Conexión Activado',
           body: 'Estás desconectado. Puedes seguir usando el Catálogo en Caché, Billetera Offline y Chatbot Local.',
         );
       }
@@ -49,7 +49,7 @@ class ConnectivityService extends ChangeNotifier {
       else if (!_isOnline && hasConnection) {
         LocalNotificationService.showNotification(
           id: 9992,
-          title: '🟢 Conexión Restablecida',
+          title: 'Conexión Restablecida',
           body: 'Conectado a la nube. Sincronizando transacciones offline y actualizando catálogo...',
         );
       }

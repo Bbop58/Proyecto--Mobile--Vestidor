@@ -40,7 +40,7 @@ class ReservationService {
     final resp = await _api.postAuth('${ApiConfig.apiUrl}/reservas', body);
     if (resp.success) {
       LocalNotificationService.showNotification(
-        title: '📦 ¡Reserva Registrada!',
+        title: '¡Reserva Registrada!',
         body: 'Tu reserva fue enviada a la sucursal. Te avisaremos cuando esté preparada para recoger.',
       );
     }

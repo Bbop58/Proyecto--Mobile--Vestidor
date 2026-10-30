@@ -468,7 +468,7 @@ class _WalletScreenState extends State<WalletScreen> {
                         const SizedBox(height: 8),
                         Center(
                           child: Text(
-                            '💡 También puedes recargar saldo en efectivo en la caja de cualquier sucursal.',
+                            'Nota: También puedes recargar saldo en efectivo en la caja de cualquier sucursal.',
                             style: TextStyle(fontSize: 11, color: textS, fontStyle: FontStyle.italic),
                           ),
                         ),
