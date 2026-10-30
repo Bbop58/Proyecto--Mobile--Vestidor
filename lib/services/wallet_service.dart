@@ -277,6 +277,7 @@ class WalletService extends ChangeNotifier {
           'fecha_local': row['fecha_local'],
           'nonce': row['nonce_usado'] ?? 0,
           'firma_cliente': row['firma_usada'] ?? '',
+          'codigo_autorizacion_offline': row['firma_usada'] ?? 'AUTH_${row['client_operation_id'].toString().substring(0, 8)}',
         };
       }).toList();
 
@@ -287,7 +288,7 @@ class WalletService extends ChangeNotifier {
 
       if (res.success && res.data != null) {
         final data = res.data as Map<String, dynamic>;
-        final results = (data['results'] as List?) ?? [];
+        final results = (data['results'] as List?) ?? (data['detalles'] as List?) ?? [];
 
         for (final r in results) {
           final opId = r['client_operation_id']?.toString() ?? '';
