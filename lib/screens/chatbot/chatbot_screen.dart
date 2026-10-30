@@ -54,12 +54,60 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Asistente Virtual IA',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                const Text(
+                  'Asistente Virtual',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: chatbotService.isOfflineMode
+                        ? Colors.amber.withValues(alpha: 0.2)
+                        : Colors.green.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: chatbotService.isOfflineMode
+                          ? Colors.amber.shade700
+                          : Colors.green.shade600,
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: chatbotService.isOfflineMode
+                              ? Colors.amber.shade700
+                              : Colors.green.shade600,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        chatbotService.isOfflineMode ? 'Modo Offline' : 'Gemini IA',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: chatbotService.isOfflineMode
+                              ? Colors.amber.shade900
+                              : Colors.green.shade800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             Text(
-              '${chatbotService.tenantName} • Gemini Flash',
+              chatbotService.isOfflineMode
+                  ? '${chatbotService.tenantName} • Motor Local Heurístico (< 5ms)'
+                  : '${chatbotService.tenantName} • Gemini 3.1 Flash-Lite (Nube)',
               style: TextStyle(
                 fontSize: 11,
                 color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,

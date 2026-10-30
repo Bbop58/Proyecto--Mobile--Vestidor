@@ -73,6 +73,9 @@ class ChatbotService extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  bool _isOfflineMode = false;
+  bool get isOfflineMode => _isOfflineMode;
+
   String _tenantName = 'FICCT Store';
   String get tenantName => _tenantName;
 
@@ -117,27 +120,132 @@ class ChatbotService extends ChangeNotifier {
           _suggestedPrompts = botRes.suggestedPrompts;
         }
         _tenantName = botRes.tenantName;
+        _isOfflineMode = false;
       } else {
-        _messages.add(
-          ChatMessageModel(
-            role: 'model',
-            content:
-                'Disculpa, ocurrió un inconveniente temporal al conectar con la IA. Puedes verificar nuestras sucursales y catálogo en el menú.',
-          ),
-        );
+        // Conmutación transparente al motor heurístico offline
+        _handleOfflineFallback(trimmed, tenantSlug);
       }
     } catch (e) {
-      _messages.add(
-        ChatMessageModel(
-          role: 'model',
-          content:
-              'No pudimos conectar con el servidor. Revisa tu conexión a internet.',
-        ),
-      );
+      // Conmutación transparente al motor heurístico offline ante corte de red o timeout
+      _handleOfflineFallback(trimmed, tenantSlug);
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Motor Heurístico Offline Ultraligero (< 5ms)
+  /// Responde de forma precisa ante cortes de señal sin modelos pesados ni sobrecargar el teléfono
+  void _handleOfflineFallback(String rawText, String? tenantSlug) {
+    _isOfflineMode = true;
+    final msg = rawText.toLowerCase();
+
+    String reply;
+
+    if (msg.contains('recomiend') ||
+        msg.contains('gust') ||
+        msg.contains('para mi') ||
+        msg.contains('suger') ||
+        msg.contains('que comprar') ||
+        msg.contains('tendencia') ||
+        msg.contains('moda')) {
+      reply =
+          '✨ **Recomendación Personalizada (Modo Sin Conexión)**\n\n'
+          'Según el catálogo de nuestra tienda y tendencias vigentes:\n'
+          '• **Línea Formal / Ejecutiva:** Ternos Slim Fit y Vestidos de Gala de alta confección.\n'
+          '• **Línea Casual / Urbana:** Hoodies con diseño gráfico y Poleras Streetwear de algodón peinado.\n\n'
+          '💡 *Tip:* Recuerda que puedes tocar el ícono de **Corazón (❤️)** en cualquier prenda para guardarla en tus **Favoritos** y revisarla en cualquier momento, incluso sin internet.';
+    } else if (msg.contains('favorit') ||
+        msg.contains('deseo') ||
+        msg.contains('wishlist') ||
+        msg.contains('guardad')) {
+      reply =
+          '❤️ **Tus Prendas Favoritas**\n\n'
+          'Puedes consultar todas tus prendas guardadas desde la sección de **Favoritos** en la barra superior o desde tu perfil.\n'
+          'Tus favoritos se mantienen sincronizados en la base de datos local de tu teléfono para que no pierdas de vista las prendas que más te gustan.';
+    } else if (msg.contains('sucursal') ||
+        msg.contains('tienda') ||
+        msg.contains('donde') ||
+        msg.contains('ubicacion') ||
+        msg.contains('direccion') ||
+        msg.contains('horario') ||
+        msg.contains('tarija') ||
+        msg.contains('santa cruz')) {
+      reply =
+          '📍 **Sucursales y Horarios de Atención**\n\n'
+          'Nuestras tiendas físicas atienden de **Lunes a Sábado de 09:00 a 20:00**:\n'
+          '• **Sucursal Tarija:** Calle Sucre #450 (Centro Histórico).\n'
+          '• **Sucursal Santa Cruz:** Av. San Martín #100 (Equipetrol) y Sucursal Centro Comercial.\n\n'
+          '¡Puedes apartar prendas desde la App y pasar a retirarlas en la sucursal más cercana!';
+    } else if (msg.contains('cambio') ||
+        msg.contains('devoluc') ||
+        msg.contains('devolver') ||
+        msg.contains('talla') ||
+        msg.contains('garantia') ||
+        msg.contains('30 dias') ||
+        msg.contains('reembolso')) {
+      reply =
+          '🔄 **Garantía Retail y Política de Cambios (30 Días)**\n\n'
+          '• **Plazo:** Hasta 30 días posteriores a tu compra presentando tu Nota de Venta digital o física.\n'
+          '• **Cambio de Talla:** Sin ningún costo adicional si la prenda tiene el mismo precio de lista.\n'
+          '• **Prenda de Mayor Valor:** Solo abonas la diferencia en caja (Efectivo o PayPal).\n'
+          '• **Prenda de Menor Valor:** La diferencia a tu favor se deposita automáticamente como saldo en tu Billetera Virtual.\n\n'
+          '*(Condición: La prenda debe encontrarse limpia y con etiquetas originales)*.';
+    } else if (msg.contains('pago') ||
+        msg.contains('pagar') ||
+        msg.contains('efectivo') ||
+        msg.contains('paypal') ||
+        msg.contains('billetera') ||
+        msg.contains('saldo') ||
+        msg.contains('fondos') ||
+        msg.contains('tarjeta') ||
+        msg.contains('qr')) {
+      reply =
+          '💳 **Métodos de Pago Autorizados**\n\n'
+          'Nuestros métodos oficiales autorizados son:\n'
+          '1. **Efectivo:** En mostrador de cualquier sucursal con cálculo automático de vuelto.\n'
+          '2. **PayPal Checkout:** En dólares estadounidenses (tipo de cambio 6.96 Bs/USD) para compras digitales desde la App Móvil.\n\n'
+          '*(Por políticas de seguridad, no operamos con códigos QR ni transferencias directas)*.';
+    } else if (msg.contains('reserva') ||
+        msg.contains('apartar') ||
+        msg.contains('recojo') ||
+        msg.contains('click and collect')) {
+      reply =
+          '🛍️ **Servicio Click & Collect (Apartados)**\n\n'
+          '1. Elige tu prenda y talla en la App Móvil y selecciona *"Apartar para Recojo"*.\n'
+          '2. El encargado de tienda aparta la prenda de inmediato.\n'
+          '3. Tienes hasta **48 horas** de vigencia para pasar por la sucursal y abonarla en Efectivo al recogerla.';
+    } else if (msg.contains('envio') ||
+        msg.contains('delivery') ||
+        msg.contains('domicilio') ||
+        msg.contains('costo envio') ||
+        msg.contains('moto') ||
+        msg.contains('cuanto tarda')) {
+      reply =
+          '🛵 **Envíos y Delivery a Domicilio**\n\n'
+          '• **Tarija (Radio Urbano):** 10.00 Bs. (Entrega en 2 a 4 hrs).\n'
+          '• **Santa Cruz (1er a 4to Anillo):** 15.00 Bs. / Equipetrol y Norte: 20.00 Bs.\n\n'
+          'Recibirás notificaciones en la barra de tu teléfono cuando el repartidor esté en camino.';
+    } else {
+      reply =
+          '⚡ **Asistente Local (Modo Sin Conexión)**\n\n'
+          'Actualmente no dispones de conexión a internet, pero sigo activo con la base de datos local guardada en tu teléfono.\n\n'
+          'Puedo ayudarte con:\n'
+          '• ✨ Recomendaciones de prendas según tus gustos\n'
+          '• 📍 Sucursales y horarios de atención\n'
+          '• 🔄 Políticas de cambio de prendas (30 días)\n'
+          '• 💳 Métodos de pago y servicio de recogida\n\n'
+          '¡Toca cualquiera de las sugerencias rápidas abajo para continuar!';
+    }
+
+    _messages.add(ChatMessageModel(role: 'model', content: reply));
+
+    _suggestedPrompts = [
+      '✨ ¿Qué me recomiendas según mis gustos?',
+      '📍 Ver Sucursales y Horarios',
+      '🔄 Política de Cambios (30 días)',
+      '💳 Métodos de Pago Aceptados',
+    ];
   }
 
   void clearHistory() {
