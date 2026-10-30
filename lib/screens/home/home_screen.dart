@@ -10,6 +10,7 @@ import 'purchase_history_screen.dart';
 import '../shop/virtual_fitting_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../wallet/wallet_screen.dart';
+import '../../widgets/offline_connectivity_banner.dart';
 import '../../services/wallet_service.dart';
 import '../../core/services/connectivity_service.dart';
 
@@ -139,6 +140,9 @@ class _HomeScreenState extends State<HomeScreen>
 
               return CustomScrollView(
                 slivers: [
+                  const SliverToBoxAdapter(
+                    child: OfflineConnectivityBanner(),
+                  ),
                   // App Bar / Topbar idéntico a Web
                   SliverToBoxAdapter(
                     child: Container(

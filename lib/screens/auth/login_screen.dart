@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/routes.dart';
 import '../../config/theme.dart';
+import '../../config/api_config.dart';
+import '../../models/tenant_model.dart';
+import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/theme_service.dart';
 
@@ -22,6 +25,9 @@ class _LoginScreenState extends State<LoginScreen>
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
 
+  List<TenantModel> _tenants = [];
+  bool _isLoadingTenants = false;
+
   @override
   void initState() {
     super.initState();
@@ -39,10 +45,59 @@ class _LoginScreenState extends State<LoginScreen>
       CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
     );
     _animController.forward();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadTenants();
+    });
+
+    _emailController.addListener(_onEmailChanged);
+  }
+
+  void _onEmailChanged() {
+    final text = _emailController.text.toLowerCase();
+    final themeService = context.read<ThemeService>();
+    for (final t in _tenants) {
+      if (text.contains(t.slug) || (t.emailContacto != null && t.emailContacto!.isNotEmpty && text.contains(t.emailContacto!.split('@').last))) {
+        if (themeService.selectedTenant?.id != t.id) {
+          themeService.setSelectedTenant(t);
+        }
+        break;
+      }
+    }
+  }
+
+  Future<void> _loadTenants() async {
+    setState(() => _isLoadingTenants = true);
+    try {
+      final apiService = context.read<ApiService>();
+      final response = await apiService.get(ApiConfig.publicTenantsUrl);
+      if (response.success && response.data != null && response.data is List) {
+        final list = (response.data as List)
+            .map((e) => TenantModel.fromJson(e as Map<String, dynamic>))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _tenants = list;
+          });
+          // Si no hay seleccionado, seleccionar el primero por defecto (ej. UrbanStyle)
+          final themeService = context.read<ThemeService>();
+          if (themeService.selectedTenant == null && _tenants.isNotEmpty) {
+            themeService.setSelectedTenant(_tenants.first);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error cargando tenants públicos en mobile: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingTenants = false);
+      }
+    }
   }
 
   @override
   void dispose() {
+    _emailController.removeListener(_onEmailChanged);
     _animController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -92,8 +147,13 @@ class _LoginScreenState extends State<LoginScreen>
     final bg = AppTheme.getBg(context);
     final textPrimary = AppTheme.getTextPrimary(context);
     final textSecondary = AppTheme.getTextSecondary(context);
-    final accent = AppTheme.getAccent(context);
     final border = AppTheme.getBorder(context);
+
+    // Color corporativo reactivo según el Tenant seleccionado
+    final activeTenant = themeService.selectedTenant;
+    final accent = activeTenant?.parsedPrimaryColor ?? AppTheme.getAccent(context);
+    final companyName = activeTenant?.nombre ?? 'Stitch Retail Cloud';
+    final slogan = activeTenant?.eslogan ?? 'Ingresa a tu cuenta para continuar';
 
     return Scaffold(
       backgroundColor: bg,
@@ -137,7 +197,7 @@ class _LoginScreenState extends State<LoginScreen>
                         decoration: AppTheme.cardDecorationOf(context),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 28,
-                          vertical: 32,
+                          vertical: 28,
                         ),
                         child: Form(
                           key: _formKey,
@@ -145,7 +205,18 @@ class _LoginScreenState extends State<LoginScreen>
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // Logo FICTT STORE
+                              // Barra superior de acento dinámico de la empresa
+                              Container(
+                                height: 4,
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: accent,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Logo de la Empresa o Fallback
                               Center(
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(
@@ -153,38 +224,145 @@ class _LoginScreenState extends State<LoginScreen>
                                   ),
                                   child: Image.asset(
                                     'assets/images/logo.png',
-                                    height: 76,
+                                    height: 64,
                                     fit: BoxFit.contain,
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 12),
 
-                              // Título y Subtítulo
+                              // Título y Subtítulo corporativo reactivo
                               Text(
-                                'Bienvenido de nuevo',
+                                companyName,
                                 style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
                                   color: textPrimary,
                                   letterSpacing: -0.3,
                                 ),
                                 textAlign: TextAlign.center,
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 4),
                               Text(
-                                'Ingresa a tu cuenta para continuar',
+                                slogan,
                                 style: TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 13,
                                   color: textSecondary,
                                 ),
                                 textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(height: 28),
+                              const SizedBox(height: 20),
+
+                              // Selector Dinámico de Organizaciones (Tenant Chips)
+                              if (_tenants.isNotEmpty) ...[
+                                Text(
+                                  'ORGANIZACIÓN',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.8,
+                                    color: textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  height: 38,
+                                  child: ListView.separated(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: _tenants.length,
+                                    separatorBuilder: (context, index) => const SizedBox(width: 8),
+                                    itemBuilder: (context, index) {
+                                      final t = _tenants[index];
+                                      final isSelected = activeTenant?.id == t.id;
+                                      final tColor = t.parsedPrimaryColor;
+                                      return InkWell(
+                                        onTap: () {
+                                          themeService.setSelectedTenant(t);
+                                          if (_emailController.text.isEmpty ||
+                                              _emailController.text.contains('@')) {
+                                            _emailController.text = 'admin@${t.slug}.com';
+                                            _passwordController.text = 'Password123!';
+                                          }
+                                        },
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: AnimatedContainer(
+                                          duration: const Duration(milliseconds: 200),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isSelected
+                                                ? tColor.withValues(alpha: 0.12)
+                                                : AppTheme.getInputBg(context),
+                                            border: Border.all(
+                                              color: isSelected ? tColor : border,
+                                              width: isSelected ? 1.5 : 1.0,
+                                            ),
+                                            borderRadius: BorderRadius.circular(20),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Container(
+                                                width: 8,
+                                                height: 8,
+                                                decoration: BoxDecoration(
+                                                  color: tColor,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                t.nombre,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                                                  color: isSelected ? tColor : textPrimary,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 5),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                decoration: BoxDecoration(
+                                                  color: isSelected ? tColor.withValues(alpha: 0.2) : border.withValues(alpha: 0.4),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Text(
+                                                  t.planCodigo,
+                                                  style: TextStyle(
+                                                    fontSize: 8,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: isSelected ? tColor : textSecondary,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                              ] else if (_isLoadingTenants) ...[
+                                const Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 8.0),
+                                    child: SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                  ),
+                                ),
+                              ],
 
                               // Email
                               Text(
-                                'Correo electrónico',
+                                'Correo corporativo',
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
@@ -215,7 +393,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   return null;
                                 },
                               ),
-                              const SizedBox(height: 18),
+                              const SizedBox(height: 16),
 
                               // Password
                               Text(
@@ -262,11 +440,11 @@ class _LoginScreenState extends State<LoginScreen>
                               ),
                               const SizedBox(height: 24),
 
-                              // Botón Iniciar Sesión (Amber CTA)
+                              // Botón Iniciar Sesión con Brand Morphing
                               Consumer<AuthService>(
                                 builder: (context, auth, _) {
                                   return SizedBox(
-                                    height: 46,
+                                    height: 48,
                                     child: ElevatedButton(
                                       onPressed:
                                           auth.isLoading ? null : _handleLogin,
@@ -289,22 +467,23 @@ class _LoginScreenState extends State<LoginScreen>
                                                 strokeWidth: 2,
                                               ),
                                             )
-                                          : const Text(
-                                              'Iniciar sesión',
-                                              style: TextStyle(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w600,
+                                          : Text(
+                                              'Ingresar a $companyName',
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w700,
                                               ),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                     ),
                                   );
                                 },
                               ),
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 20),
 
                               // Footer
                               Container(
-                                padding: const EdgeInsets.only(top: 18),
+                                padding: const EdgeInsets.only(top: 16),
                                 decoration: BoxDecoration(
                                   border: Border(
                                     top: BorderSide(

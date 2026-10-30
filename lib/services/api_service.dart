@@ -27,6 +27,28 @@ class ApiService {
     return headers;
   }
 
+  /// GET request (sin auth)
+  Future<ApiResponse> get(String url) async {
+    try {
+      final response = await _client
+          .get(Uri.parse(url), headers: _baseHeaders)
+          .timeout(ApiConfig.connectionTimeout);
+      return _handleResponse(response);
+    } on SocketException {
+      return ApiResponse(
+        success: false,
+        statusCode: 0,
+        error: 'Sin conexión a internet. Verifica tu red.',
+      );
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        statusCode: 0,
+        error: 'Error de conexión: ${e.toString()}',
+      );
+    }
+  }
+
   /// POST request (sin auth)
   Future<ApiResponse> post(String url, Map<String, dynamic> body) async {
     try {
