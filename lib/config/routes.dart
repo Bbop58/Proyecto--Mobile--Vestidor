@@ -10,4 +10,5 @@ class AppRoutes {
   static const String branches = '/branches';
   static const String virtualFitting = '/virtual-fitting';
   static const String offlineSync = '/offline-sync';
+  static const String chatbot = '/chatbot';
 }

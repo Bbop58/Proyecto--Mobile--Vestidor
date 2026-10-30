@@ -110,6 +110,17 @@ class _HomeScreenState extends State<HomeScreen>
 
     return Scaffold(
       backgroundColor: bg,
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: accent,
+        onPressed: () {
+          Navigator.pushNamed(context, AppRoutes.chatbot);
+        },
+        icon: const Icon(Icons.smart_toy_rounded, color: Colors.white),
+        label: const Text(
+          'Asistente IA',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ),
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
@@ -165,6 +176,19 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                           Row(
                             children: [
+                              // Chatbot Inteligente IA
+                              IconButton(
+                                icon: Icon(
+                                  Icons.smart_toy_rounded,
+                                  color: accent,
+                                  size: 22,
+                                ),
+                                tooltip: 'Asistente Virtual IA',
+                                onPressed: () {
+                                  Navigator.pushNamed(context, AppRoutes.chatbot);
+                                },
+                              ),
+                              const SizedBox(width: 2),
                               // Notificaciones Bell con Badge
                               Consumer<NotificationService>(
                                 builder: (context, notifService, _) {

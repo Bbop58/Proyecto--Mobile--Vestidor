@@ -45,6 +45,9 @@ class ApiConfig {
   static String get syncBatchUrl => '$apiUrl/sync/batch';
   static String get syncHistoryUrl => '$apiUrl/sync/history';
 
+  // Chatbot Inteligente con IA (Gemini Flash)
+  static String get chatbotMessageUrl => '$apiUrl/chatbot/message';
+
   // Timeouts
   static const Duration connectionTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 10);

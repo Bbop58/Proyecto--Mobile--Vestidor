@@ -29,6 +29,8 @@ import 'services/local_notification_service.dart';
 import 'core/services/connectivity_service.dart';
 import 'core/services/offline_sync_service.dart';
 import 'screens/offline/offline_sync_screen.dart';
+import 'services/chatbot_service.dart';
+import 'screens/chatbot/chatbot_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -110,6 +112,13 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider<CartService>(
           create: (_) => CartService(),
         ),
+        ChangeNotifierProxyProvider<ApiService, ChatbotService>(
+          create: (context) => ChatbotService(context.read<ApiService>()),
+          update: (_, api, chatbot) {
+            if (chatbot != null) return chatbot;
+            return ChatbotService(api);
+          },
+        ),
       ],
       child: Consumer2<AuthService, ThemeService>(
         builder: (context, auth, themeService, _) {
@@ -131,6 +140,7 @@ class MyApp extends StatelessWidget {
               AppRoutes.branches: (context) => const BranchesPublicScreen(),
               AppRoutes.virtualFitting: (context) => const VirtualFittingScreen(),
               AppRoutes.offlineSync: (context) => const OfflineSyncScreen(),
+              AppRoutes.chatbot: (context) => const ChatbotScreen(),
             },
           );
         },
