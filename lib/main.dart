@@ -30,6 +30,7 @@ import 'core/services/connectivity_service.dart';
 import 'core/services/offline_sync_service.dart';
 import 'screens/offline/offline_sync_screen.dart';
 import 'services/chatbot_service.dart';
+import 'services/tts_service.dart';
 import 'screens/chatbot/chatbot_screen.dart';
 import 'services/wallet_service.dart';
 import 'screens/wallet/wallet_screen.dart';
@@ -115,6 +116,9 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<CartService>(
           create: (_) => CartService(),
+        ),
+        ChangeNotifierProvider<TtsService>(
+          create: (_) => TtsService(),
         ),
         ChangeNotifierProxyProvider<ApiService, ChatbotService>(
           create: (context) => ChatbotService(context.read<ApiService>()),

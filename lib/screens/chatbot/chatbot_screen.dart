@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../services/chatbot_service.dart';
+import '../../services/tts_service.dart';
 
 class ChatbotScreen extends StatefulWidget {
   const ChatbotScreen({super.key});
@@ -33,16 +34,24 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     });
   }
 
-  void _sendMessage(ChatbotService service, String text) {
+  void _sendMessage(ChatbotService service, TtsService ttsService, String text) {
     if (text.trim().isEmpty) return;
     _textController.clear();
-    service.sendMessage(text);
+    service.sendMessage(
+      text,
+      onReply: (reply) {
+        if (ttsService.autoSpeakEnabled) {
+          ttsService.speak(reply, id: reply);
+        }
+      },
+    );
     _scrollToBottom();
   }
 
   @override
   Widget build(BuildContext context) {
     final chatbotService = context.watch<ChatbotService>();
+    final ttsService = context.watch<TtsService>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = AppTheme.getAccent(context);
 
@@ -117,9 +126,22 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         ),
         actions: [
           IconButton(
+            icon: Icon(
+              ttsService.autoSpeakEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+              color: ttsService.autoSpeakEnabled ? Colors.greenAccent : null,
+            ),
+            tooltip: ttsService.autoSpeakEnabled
+                ? 'Lectura automática activada (clic para silenciar)'
+                : 'Activar lectura automática por voz',
+            onPressed: () => ttsService.toggleAutoSpeak(),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Reiniciar conversación',
-            onPressed: () => chatbotService.clearHistory(),
+            onPressed: () {
+              ttsService.stop();
+              chatbotService.clearHistory();
+            },
           ),
         ],
       ),
@@ -139,7 +161,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
                   final msg = chatbotService.messages[index];
                   final isUser = msg.role == 'user';
-                  return _buildMessageBubble(context, msg, isUser, isDark, primaryColor);
+                  return _buildMessageBubble(context, msg, isUser, isDark, primaryColor, ttsService);
                 },
               ),
             ),
@@ -171,7 +193,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                           color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
                         ),
                       ),
-                      onPressed: () => _sendMessage(chatbotService, prompt),
+                      onPressed: () => _sendMessage(chatbotService, ttsService, prompt),
                     );
                   },
                 ),
@@ -194,7 +216,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     child: TextField(
                       controller: _textController,
                       textInputAction: TextInputAction.send,
-                      onSubmitted: (val) => _sendMessage(chatbotService, val),
+                      onSubmitted: (val) => _sendMessage(chatbotService, ttsService, val),
                       decoration: InputDecoration(
                         hintText: 'Pregunta sobre ropa, tallas o tiendas...',
                         hintStyle: TextStyle(
@@ -226,13 +248,18 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                   ),
                   const SizedBox(width: 8),
                   CircleAvatar(
-                    backgroundColor: primaryColor,
+                    backgroundColor: chatbotService.isLoading ? Colors.red.shade400 : primaryColor,
                     radius: 20,
                     child: IconButton(
-                      icon: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
+                      icon: Icon(
+                        chatbotService.isLoading ? Icons.stop_rounded : Icons.send_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      tooltip: chatbotService.isLoading ? 'Cancelar envío' : 'Enviar consulta',
                       onPressed: chatbotService.isLoading
-                          ? null
-                          : () => _sendMessage(chatbotService, _textController.text),
+                          ? () => chatbotService.cancelPendingRequest()
+                          : () => _sendMessage(chatbotService, ttsService, _textController.text),
                     ),
                   ),
                 ],
@@ -250,7 +277,10 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     bool isUser,
     bool isDark,
     Color primaryColor,
+    TtsService ttsService,
   ) {
+    final isSpeaking = ttsService.isSpeaking && ttsService.currentSpeakingId == msg.content;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -284,15 +314,58 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                         color: isDark ? Colors.grey.shade800 : Colors.grey.shade300,
                       ),
               ),
-              child: Text(
-                msg.content,
-                style: TextStyle(
-                  fontSize: 13.5,
-                  height: 1.4,
-                  color: isUser
-                      ? Colors.white
-                      : (isDark ? Colors.grey.shade100 : const Color(0xFF0F172A)),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    msg.content,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      height: 1.4,
+                      color: isUser
+                          ? Colors.white
+                          : (isDark ? Colors.grey.shade100 : const Color(0xFF0F172A)),
+                    ),
+                  ),
+                  if (!isUser) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        InkWell(
+                          onTap: () => ttsService.toggleSpeak(msg.content, id: msg.content),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  isSpeaking ? Icons.stop_circle_rounded : Icons.volume_up_rounded,
+                                  size: 16,
+                                  color: isSpeaking
+                                      ? Colors.redAccent
+                                      : (isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  isSpeaking ? 'Detener voz' : 'Escuchar',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: isSpeaking
+                                        ? Colors.redAccent
+                                        : (isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -344,3 +417,4 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     );
   }
 }
+

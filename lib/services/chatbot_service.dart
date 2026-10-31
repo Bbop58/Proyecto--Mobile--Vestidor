@@ -75,16 +75,36 @@ class ChatbotService extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  bool _isCancelled = false;
+
   bool _isOfflineMode = false;
   bool get isOfflineMode => _isOfflineMode;
 
   String _tenantName = 'FICCT Store';
   String get tenantName => _tenantName;
 
-  Future<void> sendMessage(String text, {String? tenantSlug}) async {
+  void cancelPendingRequest() {
+    if (!_isLoading) return;
+    _isCancelled = true;
+    _isLoading = false;
+    _messages.add(
+      ChatMessageModel(
+        role: 'model',
+        content: '🛑 *Consulta cancelada.* ¿En qué otra consulta puedo orientarte?',
+      ),
+    );
+    notifyListeners();
+  }
+
+  Future<void> sendMessage(
+    String text, {
+    String? tenantSlug,
+    Function(String reply)? onReply,
+  }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || _isLoading) return;
 
+    _isCancelled = false;
     final userMsg = ChatMessageModel(role: 'user', content: trimmed);
     _messages.add(userMsg);
     _isLoading = true;
@@ -109,6 +129,8 @@ class ChatbotService extends ChangeNotifier {
         payload,
       );
 
+      if (_isCancelled) return;
+
       if (response.success && response.data != null) {
         final data = response.data is Map<String, dynamic>
             ? response.data as Map<String, dynamic>
@@ -123,22 +145,35 @@ class ChatbotService extends ChangeNotifier {
         }
         _tenantName = botRes.tenantName;
         _isOfflineMode = false;
+        if (onReply != null) {
+          onReply(botRes.reply);
+        }
       } else {
-        // Conmutación transparente al motor heurístico offline
-        await _handleOfflineFallback(trimmed, tenantSlug);
+        if (!_isCancelled) {
+          // Conmutación transparente al motor heurístico offline
+          await _handleOfflineFallback(trimmed, tenantSlug, onReply: onReply);
+        }
       }
     } catch (e) {
-      // Conmutación transparente al motor heurístico offline ante corte de red o timeout
-      await _handleOfflineFallback(trimmed, tenantSlug);
+      if (!_isCancelled) {
+        // Conmutación transparente al motor heurístico offline ante corte de red o timeout
+        await _handleOfflineFallback(trimmed, tenantSlug, onReply: onReply);
+      }
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (!_isCancelled) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
   /// Motor Heurístico Offline Ultraligero (< 5ms)
   /// Responde de forma precisa ante cortes de señal sin modelos pesados ni sobrecargar el teléfono
-  Future<void> _handleOfflineFallback(String rawText, String? tenantSlug) async {
+  Future<void> _handleOfflineFallback(
+    String rawText,
+    String? tenantSlug, {
+    Function(String reply)? onReply,
+  }) async {
     _isOfflineMode = true;
     final msg = rawText.toLowerCase();
 
@@ -310,6 +345,9 @@ class ChatbotService extends ChangeNotifier {
     }
 
     _messages.add(ChatMessageModel(role: 'model', content: reply));
+    if (onReply != null) {
+      onReply(reply);
+    }
 
     _suggestedPrompts = [
       '✨ ¿Qué me recomiendas según mis gustos?',
