@@ -51,45 +51,54 @@ class _CartScreenState extends State<CartScreen> {
         }
       }
 
-      // Cachear en SQLite
-      try {
-        await DatabaseHelper.instance.cacheBranches(branches.map((b) => {
-          'id': b.id,
-          'nombre': b.nombre,
-          'ciudad': b.ciudad,
-          'direccion': b.direccion,
-          'activa': b.activa ? 1 : 0,
-        }).toList());
-      } catch (_) {}
+      // Cachear en SQLite solo si hay sucursales válidas
+      if (branches.isNotEmpty) {
+        try {
+          await DatabaseHelper.instance.cacheBranches(branches.map((b) => {
+            'id': b.id,
+            'nombre': b.nombre,
+            'ciudad': b.ciudad,
+            'direccion': b.direccion,
+            'activa': b.activa ? 1 : 0,
+          }).toList());
+        } catch (_) {}
+      } else {
+        // Si la lista vino vacía, intentar restaurar de SQLite
+        await _restoreBranchesFromCache();
+      }
     } catch (_) {
-      try {
-        final cached = await DatabaseHelper.instance.getCachedBranches();
-        if (cached.isNotEmpty && mounted) {
-          final fallbackBranches = cached.map((c) => Branch(
-            id: c['id'] as String,
-            nombre: c['nombre'] as String,
-            ciudad: c['ciudad'] as String? ?? '',
-            direccion: c['direccion'] as String? ?? '',
-            activa: (c['activa'] == 1),
-          )).toList();
+      await _restoreBranchesFromCache();
+    }
+  }
 
-          setState(() {
-            _branches = fallbackBranches;
-            _isLoadingBranches = false;
-          });
-          final cart = context.read<CartService>();
-          if (cart.selectedBranch == null && fallbackBranches.isNotEmpty) {
-            cart.setSelectedBranch(fallbackBranches.first);
-          }
-          return;
-        }
-      } catch (_) {}
+  Future<void> _restoreBranchesFromCache() async {
+    try {
+      final cached = await DatabaseHelper.instance.getCachedBranches();
+      if (cached.isNotEmpty && mounted) {
+        final fallbackBranches = cached.map((c) => Branch(
+          id: c['id'] as String,
+          nombre: c['nombre'] as String,
+          ciudad: c['ciudad'] as String? ?? '',
+          direccion: c['direccion'] as String? ?? '',
+          activa: (c['activa'] == 1),
+        )).toList();
 
-      if (mounted) {
         setState(() {
+          _branches = fallbackBranches;
           _isLoadingBranches = false;
         });
+        final cart = context.read<CartService>();
+        if (cart.selectedBranch == null && fallbackBranches.isNotEmpty) {
+          cart.setSelectedBranch(fallbackBranches.first);
+        }
+        return;
       }
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _isLoadingBranches = false;
+      });
     }
   }
 

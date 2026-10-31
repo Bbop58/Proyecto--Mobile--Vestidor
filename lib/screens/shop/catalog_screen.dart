@@ -6,6 +6,7 @@ import '../../models/category.dart';
 import '../../models/product.dart';
 import '../../models/product_variant.dart';
 import '../../core/database/database_helper.dart';
+import '../../core/services/connectivity_service.dart';
 import '../../services/cart_service.dart';
 import '../../services/category_service.dart';
 import '../../services/product_service.dart';
@@ -52,11 +53,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
       _errorMessage = null;
     });
 
+    final connectivity = context.read<ConnectivityService>();
+    final catService = context.read<CategoryService>();
+    final seasonService = context.read<SeasonService>();
+    final prodService = context.read<ProductService>();
+    final notifService = context.read<NotificationService>();
+
+    if (!connectivity.isOnline) {
+      final loadedOffline = await _loadFromSqliteCache();
+      if (loadedOffline) return;
+    }
+
     try {
-      final catService = context.read<CategoryService>();
-      final seasonService = context.read<SeasonService>();
-      final prodService = context.read<ProductService>();
-      context.read<NotificationService>().fetchUnreadCount();
+      notifService.fetchUnreadCount();
 
       final categories = await catService.getCategories();
       final seasons = await seasonService.getSeasons();
@@ -76,26 +85,34 @@ class _CatalogScreenState extends State<CatalogScreen> {
             : null,
       );
 
-      // Cachear en SQLite local
-      try {
-        await DatabaseHelper.instance.cacheProducts(products.map((p) => {
-          'id': p.id,
-          'nombre': p.nombre,
-          'categoria': p.categoriaNombre ?? '',
-          'precio_base': p.precioBase,
-          'imagen_url': p.imagenUrl ?? '',
-          'variantes_json': jsonEncode(p.variantes.map((v) => {
-            'id': v.id,
-            'producto_id': v.productoId,
-            'sku': v.codigoSku,
-            'talla': v.talla,
-            'color': v.color,
-            'precio_extra': v.precioAdicional,
-            'imagen_url': v.imagenUrl,
-          }).toList()),
-        }).toList());
-      } catch (e) {
-        debugPrint('Error al guardar caché en SQLite: $e');
+      // Si no trajo productos y no hay filtros activos, intentar respaldo offline
+      if (products.isEmpty && _selectedCategoryId == null && _selectedSeasonId == null && _searchController.text.trim().isEmpty) {
+        final loadedOffline = await _loadFromSqliteCache();
+        if (loadedOffline) return;
+      }
+
+      // Cachear en SQLite local solo cuando hay productos válidos
+      if (products.isNotEmpty) {
+        try {
+          await DatabaseHelper.instance.cacheProducts(products.map((p) => {
+            'id': p.id,
+            'nombre': p.nombre,
+            'categoria': p.categoriaNombre ?? '',
+            'precio_base': p.precioBase,
+            'imagen_url': p.imagenUrl ?? '',
+            'variantes_json': jsonEncode(p.variantes.map((v) => {
+              'id': v.id,
+              'producto_id': v.productoId,
+              'sku': v.codigoSku,
+              'talla': v.talla,
+              'color': v.color,
+              'precio_extra': v.precioAdicional,
+              'imagen_url': v.imagenUrl,
+            }).toList()),
+          }).toList());
+        } catch (e) {
+          debugPrint('Error al guardar caché en SQLite: $e');
+        }
       }
 
       if (mounted) {
@@ -108,55 +125,71 @@ class _CatalogScreenState extends State<CatalogScreen> {
       }
     } catch (e) {
       // Fallback: cargar catálogo desde la base de datos local SQLite
-      try {
-        final cached = await DatabaseHelper.instance.getCachedProducts();
-        if (cached.isNotEmpty) {
-          final fallbackProducts = cached.map((c) {
-            List<ProductVariant> vars = [];
-            try {
-              final rawV = jsonDecode(c['variantes_json'] as String) as List;
-              vars = rawV.map((v) => ProductVariant(
-                id: v['id'] ?? '',
-                productoId: (v['producto_id'] ?? c['id'] ?? '').toString(),
-                talla: v['talla'] ?? '',
-                color: v['color'] ?? '',
-                codigoSku: v['sku'] ?? '',
-                precioAdicional: (v['precio_extra'] as num?)?.toDouble() ?? 0.0,
-                imagenUrl: v['imagen_url'] as String?,
-                activo: true,
-              )).toList();
-            } catch (_) {}
-
-            return Product(
-              id: c['id'] as String,
-              codigo: (c['id'] as String).length >= 8 ? (c['id'] as String).substring(0, 8).toUpperCase() : (c['id'] as String),
-              nombre: c['nombre'] as String,
-              precioBase: (c['precio_base'] as num).toDouble(),
-              categoriaNombre: c['categoria'] as String?,
-              imagenUrl: c['imagen_url'] as String?,
-              activo: true,
-              variantes: vars,
-            );
-          }).toList();
-
-          if (mounted) {
-            setState(() {
-              _products = fallbackProducts;
-              _isLoading = false;
-              _errorMessage = null;
-            });
-            return;
-          }
-        }
-      } catch (_) {}
-
-      if (mounted) {
+      final loadedOffline = await _loadFromSqliteCache();
+      if (!loadedOffline && mounted) {
         setState(() {
-          _errorMessage = 'Error al cargar el catálogo: ${e.toString()}';
+          _errorMessage = 'Modo offline: No hay productos en la caché local para mostrar.';
           _isLoading = false;
         });
       }
     }
+  }
+
+  /// Carga de emergencia o contingencia offline desde SQLite local
+  Future<bool> _loadFromSqliteCache() async {
+    try {
+      final cached = await DatabaseHelper.instance.getCachedProducts();
+      if (cached.isNotEmpty) {
+        final fallbackProducts = cached.map((c) {
+          List<ProductVariant> vars = [];
+          try {
+            final rawV = jsonDecode(c['variantes_json'] as String) as List;
+            vars = rawV.map((v) => ProductVariant(
+              id: v['id'] ?? '',
+              productoId: (v['producto_id'] ?? c['id'] ?? '').toString(),
+              talla: v['talla'] ?? '',
+              color: v['color'] ?? '',
+              codigoSku: v['sku'] ?? '',
+              precioAdicional: (v['precio_extra'] as num?)?.toDouble() ?? 0.0,
+              imagenUrl: v['imagen_url'] as String?,
+              activo: true,
+            )).toList();
+          } catch (_) {}
+
+          return Product(
+            id: c['id'] as String,
+            codigo: (c['id'] as String).length >= 8 ? (c['id'] as String).substring(0, 8).toUpperCase() : (c['id'] as String),
+            nombre: c['nombre'] as String,
+            precioBase: (c['precio_base'] as num).toDouble(),
+            categoriaNombre: c['categoria'] as String?,
+            imagenUrl: c['imagen_url'] as String?,
+            activo: true,
+            variantes: vars,
+          );
+        }).toList();
+
+        // Aplicar filtro de búsqueda si el usuario ingresó texto
+        final query = _searchController.text.trim().toLowerCase();
+        final filtered = query.isEmpty
+            ? fallbackProducts
+            : fallbackProducts.where((p) =>
+                p.nombre.toLowerCase().contains(query) ||
+                (p.categoriaNombre?.toLowerCase().contains(query) ?? false)
+              ).toList();
+
+        if (mounted) {
+          setState(() {
+            _products = filtered;
+            _isLoading = false;
+            _errorMessage = null;
+          });
+          return true;
+        }
+      }
+    } catch (e) {
+      debugPrint('[CATALOG] Error leyendo respaldo SQLite: $e');
+    }
+    return false;
   }
 
   void _onCategorySelected(String? categoryId) {

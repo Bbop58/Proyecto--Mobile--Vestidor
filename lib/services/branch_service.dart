@@ -16,6 +16,9 @@ class BranchService {
           .where((b) => b.activa)
           .toList();
     }
+    if (!response.success) {
+      throw Exception(response.error ?? 'Error de conexión con sucursales');
+    }
     return [];
   }
 }

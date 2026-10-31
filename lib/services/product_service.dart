@@ -37,6 +37,9 @@ class ProductService {
           .map((json) => Product.fromJson(json as Map<String, dynamic>))
           .toList();
     }
+    if (!response.success) {
+      throw Exception(response.error ?? 'Error de conexión con el catálogo');
+    }
     return [];
   }
 
@@ -44,6 +47,9 @@ class ProductService {
     final response = await _api.getAuth('${ApiConfig.apiUrl}/productos/$id');
     if (response.success && response.data is Map<String, dynamic>) {
       return Product.fromJson(response.data as Map<String, dynamic>);
+    }
+    if (!response.success) {
+      throw Exception(response.error ?? 'Error de conexión al obtener producto');
     }
     return null;
   }

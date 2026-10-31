@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
+import '../../core/database/database_helper.dart';
 import '../../models/product.dart';
 import '../../models/product_variant.dart';
 import '../../services/cart_service.dart';
@@ -45,25 +47,64 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       _errorMessage = null;
     });
 
+    Product? prod;
     try {
       final service = context.read<ProductService>();
-      final prod = await service.getProductById(widget.productId);
-      if (mounted) {
+      prod = await service.getProductById(widget.productId);
+    } catch (_) {}
+
+    if (prod == null) {
+      // Fallback: cargar producto desde la base de datos local SQLite
+      try {
+        final cached = await DatabaseHelper.instance.getCachedProducts();
+        final match = cached.where((c) => c['id'] == widget.productId);
+        if (match.isNotEmpty) {
+          final c = match.first;
+          List<ProductVariant> vars = [];
+          try {
+            final rawV = jsonDecode(c['variantes_json'] as String) as List;
+            vars = rawV.map((v) => ProductVariant(
+              id: v['id'] ?? '',
+              productoId: (v['producto_id'] ?? c['id'] ?? '').toString(),
+              talla: v['talla'] ?? '',
+              color: v['color'] ?? '',
+              codigoSku: v['sku'] ?? '',
+              precioAdicional: (v['precio_extra'] as num?)?.toDouble() ?? 0.0,
+              imagenUrl: v['imagen_url'] as String?,
+              activo: true,
+            )).toList();
+          } catch (_) {}
+
+          prod = Product(
+            id: c['id'] as String,
+            codigo: (c['id'] as String).length >= 8 ? (c['id'] as String).substring(0, 8).toUpperCase() : (c['id'] as String),
+            nombre: c['nombre'] as String,
+            precioBase: (c['precio_base'] as num).toDouble(),
+            categoriaNombre: c['categoria'] as String?,
+            imagenUrl: c['imagen_url'] as String?,
+            activo: true,
+            variantes: vars,
+          );
+        }
+      } catch (e) {
+        debugPrint('[DETAIL] Error cargando producto de SQLite: $e');
+      }
+    }
+
+    if (mounted) {
+      if (prod != null) {
         setState(() {
           _product = prod;
           _isLoading = false;
-          if (prod != null && prod.variantes.isNotEmpty) {
+          if (prod!.variantes.isNotEmpty) {
             _selectedSize = prod.variantes.first.talla;
             _selectedColor = prod.variantes.first.color;
           }
         });
-        // Load availability for first variant
         _loadAvailability();
-      }
-    } catch (e) {
-      if (mounted) {
+      } else {
         setState(() {
-          _errorMessage = 'Error al cargar detalle: ${e.toString()}';
+          _errorMessage = 'No se pudo cargar la información del producto.';
           _isLoading = false;
         });
       }
