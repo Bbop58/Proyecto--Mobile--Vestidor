@@ -74,6 +74,7 @@ class _WalletScreenState extends State<WalletScreen> {
       }
 
       final approveUrl = res['approve_url'].toString();
+      final orderId = res['order_id']?.toString() ?? '';
       final montoUsd = (res['monto_usd'] as num?)?.toDouble() ?? (amount / 6.96);
 
       // Abrir navegador para autorizar cobro en PayPal Sandbox
@@ -153,29 +154,59 @@ class _WalletScreenState extends State<WalletScreen> {
                           ? null
                           : () async {
                               setModalState(() => confirming = true);
-                              await context.read<WalletService>().fetchWallet();
-                              await LocalNotificationService.showNotification(
-                                title: '¡Recarga Exitosa!',
-                                body: 'Se han acreditado Bs. ${amount.toStringAsFixed(2)} en tu Billetera Virtual.',
+                              final ok = await context.read<WalletService>().confirmPayPalTopup(
+                                orderId: orderId,
+                                amountBob: amount,
+                                amountUsd: montoUsd,
                               );
-                              if (ctx.mounted) Navigator.pop(ctx);
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('¡Billetera recargada con éxito! +Bs. ${amount.toStringAsFixed(2)}'),
-                                    backgroundColor: AppTheme.successColor,
-                                  ),
+                              if (ok) {
+                                await context.read<WalletService>().fetchHistory();
+                                await LocalNotificationService.showNotification(
+                                  title: 'Recarga Exitosa',
+                                  body: 'Se han acreditado Bs. ${amount.toStringAsFixed(2)} en tu Billetera Virtual.',
                                 );
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Billetera recargada con éxito (+Bs. ${amount.toStringAsFixed(2)})'),
+                                      backgroundColor: AppTheme.successColor,
+                                    ),
+                                  );
+                                }
+                              } else {
+                                setModalState(() => confirming = false);
+                                final err = context.read<WalletService>().errorMessage ?? 'Error al acreditar fondos';
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(err),
+                                      backgroundColor: AppTheme.errorColor,
+                                    ),
+                                  );
+                                }
                               }
                             },
                       icon: confirming
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                           : const Icon(Icons.check_circle_outline),
-                      label: Text(confirming ? 'Actualizando Saldo...' : 'Ya completé el pago en PayPal'),
+                      label: Text(confirming ? 'Acreditando Saldo...' : 'Confirmar y Acreditar Saldo'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.successColor,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => UrlHelper.openUrl(approveUrl),
+                      icon: const Icon(Icons.open_in_browser, size: 16),
+                      label: const Text('Reabrir ventana de PayPal'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF0070BA),
+                        side: const BorderSide(color: Color(0xFF0070BA)),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                     ),

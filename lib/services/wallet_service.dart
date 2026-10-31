@@ -171,6 +171,56 @@ class WalletService extends ChangeNotifier {
     }
   }
 
+  /// Confirma la recarga en backend acreditando los fondos en la Billetera
+  Future<bool> confirmPayPalTopup({
+    required String orderId,
+    required double amountBob,
+    required double amountUsd,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final res = await _apiService.postAuth(
+        ApiConfig.walletTopupPaypalUrl,
+        {
+          'order_id': orderId,
+          'monto_bob': amountBob,
+          'monto_usd': amountUsd,
+        },
+      );
+
+      _isLoading = false;
+
+      if (res.success && res.data != null) {
+        _wallet = UserWallet.fromJson(res.data as Map<String, dynamic>);
+
+        // Guardar copia local en SQLite para sincronización offline
+        final userId = _wallet!.userId;
+        await _db.saveLocalWallet(
+          userId: userId,
+          saldo: _wallet!.saldoActual,
+          nonce: _wallet!.nonceSecuencia,
+          firma: _wallet!.firmaBalance,
+          moneda: _wallet!.moneda,
+        );
+
+        notifyListeners();
+        return true;
+      } else {
+        _errorMessage = res.error ?? 'Error confirmando acreditación de fondos';
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = 'Excepción al acreditar fondos: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Realiza el cobro con saldo de la Billetera (Soporta Offline y Online)
   Future<Map<String, dynamic>> payWithWallet({
     required String sucursalId,
