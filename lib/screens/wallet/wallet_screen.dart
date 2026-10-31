@@ -154,13 +154,14 @@ class _WalletScreenState extends State<WalletScreen> {
                           ? null
                           : () async {
                               setModalState(() => confirming = true);
-                              final ok = await context.read<WalletService>().confirmPayPalTopup(
+                              final wService = context.read<WalletService>();
+                              final ok = await wService.confirmPayPalTopup(
                                 orderId: orderId,
                                 amountBob: amount,
                                 amountUsd: montoUsd,
                               );
                               if (ok) {
-                                await context.read<WalletService>().fetchHistory();
+                                await wService.fetchHistory();
                                 await LocalNotificationService.showNotification(
                                   title: 'Recarga Exitosa',
                                   body: 'Se han acreditado Bs. ${amount.toStringAsFixed(2)} en tu Billetera Virtual.',
@@ -176,7 +177,7 @@ class _WalletScreenState extends State<WalletScreen> {
                                 }
                               } else {
                                 setModalState(() => confirming = false);
-                                final err = context.read<WalletService>().errorMessage ?? 'Error al acreditar fondos';
+                                final err = wService.errorMessage ?? 'Error al acreditar fondos';
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
