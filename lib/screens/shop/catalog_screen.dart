@@ -15,6 +15,8 @@ import '../../services/notification_service.dart';
 import 'cart_screen.dart';
 import 'product_detail_screen.dart';
 import 'virtual_fitting_screen.dart';
+import 'favorites_screen.dart';
+import '../../services/favorite_service.dart';
 import '../notifications/notifications_screen.dart';
 
 
@@ -99,6 +101,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
             'nombre': p.nombre,
             'categoria': p.categoriaNombre ?? '',
             'precio_base': p.precioBase,
+            'precio_oferta': p.precioOferta,
+            'en_oferta': p.enOferta ? 1 : 0,
             'imagen_url': p.imagenUrl ?? '',
             'variantes_json': jsonEncode(p.variantes.map((v) => {
               'id': v.id,
@@ -161,6 +165,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
             codigo: (c['id'] as String).length >= 8 ? (c['id'] as String).substring(0, 8).toUpperCase() : (c['id'] as String),
             nombre: c['nombre'] as String,
             precioBase: (c['precio_base'] as num).toDouble(),
+            precioOferta: (c['precio_oferta'] as num?)?.toDouble(),
+            enOferta: (c['en_oferta'] == 1 || c['en_oferta'] == true),
             categoriaNombre: c['categoria'] as String?,
             imagenUrl: c['imagen_url'] as String?,
             activo: true,
@@ -288,6 +294,54 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         padding: const EdgeInsets.all(3),
                         decoration: const BoxDecoration(
                           color: AppTheme.errorColor,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        child: Center(
+                          child: Text(
+                            count > 9 ? '9+' : '$count',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+          // Wishlist / Favoritos Button
+          Consumer<FavoriteService>(
+            builder: (context, favService, _) {
+              final count = favService.count;
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      count > 0 ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                      size: 22,
+                    ),
+                    color: count > 0 ? Colors.red : textPrimary,
+                    tooltip: 'Mis Favoritos',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+                      );
+                    },
+                  ),
+                  if (count > 0)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
                           shape: BoxShape.circle,
                         ),
                         constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
@@ -658,6 +712,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   Widget _buildProductCard(BuildContext context, Product product) {
     final cardBg = AppTheme.getCardBg(context);
     final textPrimary = AppTheme.getTextPrimary(context);
+    final textSecondary = AppTheme.getTextSecondary(context);
     final border = AppTheme.getBorder(context);
     final accent = AppTheme.getAccent(context);
 
@@ -715,7 +770,29 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             )
                           : _buildPlaceholderImage(accent),
                     ),
-                    if (product.temporada != null && product.temporada!.isNotEmpty)
+                    if (product.enOferta)
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade700,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            product.porcentajeDescuento > 0
+                                ? '-${product.porcentajeDescuento}% OFF'
+                                : 'OFERTA',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (product.temporada != null && product.temporada!.isNotEmpty)
                       Positioned(
                         top: 8,
                         left: 8,
@@ -735,6 +812,37 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           ),
                         ),
                       ),
+                    // Botón de Favoritos (Wishlist)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Consumer<FavoriteService>(
+                        builder: (ctx, favService, _) {
+                          final isFav = favService.isFavorite(product.id);
+                          return Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: () => favService.toggleFavorite(product),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: (Theme.of(context).brightness == Brightness.dark
+                                      ? Colors.black54
+                                      : Colors.white.withValues(alpha: 0.85)),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                  size: 18,
+                                  color: isFav ? Colors.red : Colors.grey.shade600,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -781,13 +889,27 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Text(
-                            'Bs. ${product.precioBase.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: accent,
-                            ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Bs. ${product.precioEfectivo.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: product.enOferta ? Colors.red.shade700 : accent,
+                                ),
+                              ),
+                              if (product.enOferta)
+                                Text(
+                                  'Bs. ${product.precioBase.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    decoration: TextDecoration.lineThrough,
+                                    color: textSecondary,
+                                  ),
+                                ),
+                            ],
                           ),
                           Container(
                             padding: const EdgeInsets.all(5),

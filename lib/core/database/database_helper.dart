@@ -20,7 +20,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -30,6 +30,26 @@ class DatabaseHelper {
     if (oldVersion < 2) {
       await _createWalletTables(db);
     }
+    if (oldVersion < 3) {
+      try {
+        await db.execute('ALTER TABLE cached_products ADD COLUMN precio_oferta REAL;');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE cached_products ADD COLUMN en_oferta INTEGER DEFAULT 0;');
+      } catch (_) {}
+      await _createFavoriteTables(db);
+    }
+  }
+
+  Future<void> _createFavoriteTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS local_favorites (
+        product_id TEXT PRIMARY KEY,
+        user_id TEXT,
+        product_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   Future<void> _createWalletTables(Database db) async {
@@ -90,13 +110,15 @@ class DatabaseHelper {
       )
     ''');
 
-    // 2. Catálogo de productos y variantes
+    // 2. Catálogo de productos y variantes (con soporte de ofertas)
     await db.execute('''
       CREATE TABLE cached_products (
         id TEXT PRIMARY KEY,
         nombre TEXT NOT NULL,
         categoria TEXT,
         precio_base REAL NOT NULL,
+        precio_oferta REAL,
+        en_oferta INTEGER DEFAULT 0,
         imagen_url TEXT,
         variantes_json TEXT
       )
@@ -126,6 +148,7 @@ class DatabaseHelper {
     ''');
 
     await _createWalletTables(db);
+    await _createFavoriteTables(db);
   }
 
   // ── SUCURSALES ──
@@ -165,6 +188,8 @@ class DatabaseHelper {
           'nombre': p['nombre'],
           'categoria': p['categoria'] is Map ? p['categoria']['nombre'] : (p['categoria']?.toString() ?? ''),
           'precio_base': (p['precio_base'] as num).toDouble(),
+          'precio_oferta': p['precio_oferta'] != null ? (p['precio_oferta'] as num).toDouble() : null,
+          'en_oferta': (p['en_oferta'] == true || p['en_oferta'] == 1) ? 1 : 0,
           'imagen_url': p['imagen_url'] ?? '',
           'variantes_json': p['variantes_json'] ?? '[]',
         },
@@ -177,6 +202,40 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getCachedProducts() async {
     final db = await instance.database;
     return await db.query('cached_products');
+  }
+
+  // ── FAVORITOS (WISHLIST) OFFLINE ──
+  Future<void> saveLocalFavorite(String productId, String? userId, String productJson) async {
+    final db = await instance.database;
+    await db.insert(
+      'local_favorites',
+      {
+        'product_id': productId,
+        'user_id': userId ?? '',
+        'product_json': productJson,
+        'created_at': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> removeLocalFavorite(String productId) async {
+    final db = await instance.database;
+    await db.delete('local_favorites', where: 'product_id = ?', whereArgs: [productId]);
+  }
+
+  Future<List<Map<String, dynamic>>> getLocalFavorites([String? userId]) async {
+    final db = await instance.database;
+    if (userId != null && userId.isNotEmpty) {
+      return await db.query('local_favorites', where: 'user_id = ? OR user_id = ""', whereArgs: [userId]);
+    }
+    return await db.query('local_favorites');
+  }
+
+  Future<bool> isLocalFavorite(String productId) async {
+    final db = await instance.database;
+    final res = await db.query('local_favorites', where: 'product_id = ?', whereArgs: [productId]);
+    return res.isNotEmpty;
   }
 
   // ── OPERACIONES OFFLINE (VENTAS Y RESERVAS) ──

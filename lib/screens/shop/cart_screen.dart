@@ -13,6 +13,8 @@ import '../../core/services/offline_sync_service.dart';
 import '../../core/database/database_helper.dart';
 import '../../utils/url_helper.dart';
 import '../../services/wallet_service.dart';
+import '../../services/api_service.dart';
+import '../../config/api_config.dart';
 import '../wallet/wallet_screen.dart';
 
 class CartScreen extends StatefulWidget {
@@ -26,6 +28,99 @@ class _CartScreenState extends State<CartScreen> {
   List<Branch> _branches = [];
   bool _isLoadingBranches = true;
   bool _isSubmitting = false;
+
+  final TextEditingController _couponController = TextEditingController();
+  String? _appliedCouponCode;
+  double _couponDiscount = 0.0;
+  bool _isValidatingCoupon = false;
+
+  double _getFinalTotal(double cartTotal) {
+    return (cartTotal - _couponDiscount).clamp(0.0, double.infinity);
+  }
+
+  Future<void> _applyCoupon() async {
+    final code = _couponController.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+
+    setState(() => _isValidatingCoupon = true);
+    final api = context.read<ApiService>();
+    final cart = context.read<CartService>();
+
+    try {
+      final res = await api.postAuth('${ApiConfig.apiUrl}/coupons/validate', {
+        'codigo': code,
+        'monto_subtotal': cart.subtotal,
+      });
+
+      if (res.success && res.data != null) {
+        final data = res.data as Map<String, dynamic>;
+        final bool valido = data['valido'] == true;
+        if (valido) {
+          final desc = (data['monto_descuento'] as num?)?.toDouble() ?? 0.0;
+          setState(() {
+            _appliedCouponCode = code;
+            _couponDiscount = desc;
+            _isValidatingCoupon = false;
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(data['mensaje']?.toString() ?? 'Cupón aplicado'),
+                backgroundColor: AppTheme.successColor,
+              ),
+            );
+          }
+          return;
+        } else {
+          setState(() => _isValidatingCoupon = false);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(data['mensaje']?.toString() ?? 'Cupón no válido'),
+                backgroundColor: AppTheme.errorColor,
+              ),
+            );
+          }
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // Respaldo para modo Offline: cupones predeterminados
+    if (code == 'PROMO10' || code == 'FICC2026') {
+      final pct = code == 'FICC2026' ? 0.15 : 0.10;
+      final desc = cart.subtotal * pct;
+      setState(() {
+        _appliedCouponCode = code;
+        _couponDiscount = desc;
+        _isValidatingCoupon = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cupón $code validado localmente (Modo offline)'),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      }
+    } else {
+      setState(() => _isValidatingCoupon = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cupón no válido o no aplicable.'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _couponController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -349,7 +444,7 @@ class _CartScreenState extends State<CartScreen> {
       return;
     }
 
-    final total = cart.total;
+    final total = _getFinalTotal(cart.total);
     final saldoActual = walletService.saldo;
 
     if (saldoActual < total) {
@@ -653,7 +748,7 @@ class _CartScreenState extends State<CartScreen> {
 
       // 1. Crear la orden en PayPal Sandbox
       final orderRes = await paypalService.createOrder(
-        montoBob: cart.total,
+        montoBob: _getFinalTotal(cart.total),
         sucursalId: cart.selectedBranch!.id,
         descripcion: 'Compra directa en App Móvil FICCT STORE',
         items: items,
@@ -1269,6 +1364,105 @@ class _CartScreenState extends State<CartScreen> {
 
                 const SizedBox(height: 16),
 
+                // Sección de Cupón de Descuento
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: cardBg,
+                    borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                    border: Border.all(color: border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.local_offer_outlined, size: 18, color: accent),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Cupón de Descuento',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textPrimary),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      if (_appliedCouponCode != null) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '$_appliedCouponCode aplicado (-Bs. ${_couponDiscount.toStringAsFixed(2)})',
+                                  style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ),
+                              IconButton(
+                                constraints: const BoxConstraints(),
+                                padding: EdgeInsets.zero,
+                                icon: const Icon(Icons.close_rounded, size: 18, color: Colors.red),
+                                onPressed: () {
+                                  setState(() {
+                                    _appliedCouponCode = null;
+                                    _couponDiscount = 0.0;
+                                    _couponController.clear();
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _couponController,
+                                textCapitalization: TextCapitalization.characters,
+                                decoration: InputDecoration(
+                                  hintText: 'Ej: PROMO10, FICC2026',
+                                  hintStyle: TextStyle(fontSize: 12, color: textSecondary),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: border),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: border),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton(
+                              onPressed: _isValidatingCoupon ? null : _applyCoupon,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: accent,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              child: _isValidatingCoupon
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                  : const Text('Aplicar', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
                 // Resumen de Costo
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -1289,6 +1483,22 @@ class _CartScreenState extends State<CartScreen> {
                           ),
                         ],
                       ),
+                      if (_couponDiscount > 0) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Descuento Cupón ($_appliedCouponCode)',
+                              style: const TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                            Text(
+                              '-Bs. ${_couponDiscount.toStringAsFixed(2)}',
+                              style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1309,7 +1519,7 @@ class _CartScreenState extends State<CartScreen> {
                             style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textPrimary),
                           ),
                           Text(
-                            'Bs. ${cart.total.toStringAsFixed(2)}',
+                            'Bs. ${_getFinalTotal(cart.total).toStringAsFixed(2)}',
                             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: accent),
                           ),
                         ],

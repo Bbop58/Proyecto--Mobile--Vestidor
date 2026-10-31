@@ -184,6 +184,29 @@ class ApiService {
     }
   }
 
+  /// DELETE request (con auth)
+  Future<ApiResponse> deleteAuth(String url) async {
+    try {
+      final headers = await _authHeaders();
+      final response = await _client
+          .delete(Uri.parse(url), headers: headers)
+          .timeout(ApiConfig.connectionTimeout);
+      return _handleResponse(response);
+    } on SocketException {
+      return ApiResponse(
+        success: false,
+        statusCode: 0,
+        error: 'Sin conexión a internet. Verifica tu red.',
+      );
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        statusCode: 0,
+        error: 'Error de conexión: ${e.toString()}',
+      );
+    }
+  }
+
   /// PATCH request (con auth)
   Future<ApiResponse> patchAuth(
       String url, [Map<String, dynamic>? body]) async {

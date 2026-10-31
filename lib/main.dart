@@ -33,6 +33,8 @@ import 'services/chatbot_service.dart';
 import 'screens/chatbot/chatbot_screen.dart';
 import 'services/wallet_service.dart';
 import 'screens/wallet/wallet_screen.dart';
+import 'services/favorite_service.dart';
+import 'screens/shop/favorites_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -132,6 +134,17 @@ class MyApp extends StatelessWidget {
             return WalletService(api, conn, storage);
           },
         ),
+        ChangeNotifierProxyProvider3<ApiService, ConnectivityService, StorageService, FavoriteService>(
+          create: (context) => FavoriteService(
+            context.read<ApiService>(),
+            context.read<ConnectivityService>(),
+            context.read<StorageService>(),
+          ),
+          update: (_, api, conn, storage, favService) {
+            if (favService != null) return favService;
+            return FavoriteService(api, conn, storage);
+          },
+        ),
       ],
       child: Consumer2<AuthService, ThemeService>(
         builder: (context, auth, themeService, _) {
@@ -155,6 +168,7 @@ class MyApp extends StatelessWidget {
               AppRoutes.offlineSync: (context) => const OfflineSyncScreen(),
               AppRoutes.chatbot: (context) => const ChatbotScreen(),
               AppRoutes.wallet: (context) => const WalletScreen(),
+              AppRoutes.favorites: (context) => const FavoritesScreen(),
             },
           );
         },

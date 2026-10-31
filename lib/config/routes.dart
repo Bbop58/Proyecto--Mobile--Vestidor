@@ -12,4 +12,5 @@ class AppRoutes {
   static const String offlineSync = '/offline-sync';
   static const String chatbot = '/chatbot';
   static const String wallet = '/wallet';
+  static const String favorites = '/favorites';
 }

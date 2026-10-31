@@ -8,6 +8,7 @@ import '../../models/product_variant.dart';
 import '../../services/cart_service.dart';
 import '../../services/inventory_service.dart';
 import '../../services/product_service.dart';
+import '../../services/favorite_service.dart';
 import 'cart_screen.dart';
 import 'virtual_fitting_screen.dart';
 import '../virtual_tryon_screen.dart';
@@ -80,6 +81,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             codigo: (c['id'] as String).length >= 8 ? (c['id'] as String).substring(0, 8).toUpperCase() : (c['id'] as String),
             nombre: c['nombre'] as String,
             precioBase: (c['precio_base'] as num).toDouble(),
+            precioOferta: (c['precio_oferta'] as num?)?.toDouble(),
+            enOferta: (c['en_oferta'] == 1 || c['en_oferta'] == true),
             categoriaNombre: c['categoria'] as String?,
             imagenUrl: c['imagen_url'] as String?,
             activo: true,
@@ -172,7 +175,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   double get _currentUnitPrice {
     if (_product == null) return 0.0;
     final variant = _selectedVariant;
-    return _product!.precioBase + (variant?.precioAdicional ?? 0.0);
+    return _product!.precioEfectivo + (variant?.precioAdicional ?? 0.0);
   }
 
   void _handleAddToCart() {
@@ -284,6 +287,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ),
             ),
             actions: [
+              Consumer<FavoriteService>(
+                builder: (context, favService, _) {
+                  final isFav = favService.isFavorite(product.id);
+                  return Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: CircleAvatar(
+                      backgroundColor: cardBg.withValues(alpha: 0.9),
+                      child: IconButton(
+                        icon: Icon(
+                          isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                          color: isFav ? Colors.red : textPrimary,
+                        ),
+                        onPressed: () => favService.toggleFavorite(product),
+                        tooltip: isFav ? 'Quitar de favoritos' : 'Agregar a favoritos',
+                      ),
+                    ),
+                  );
+                },
+              ),
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: CircleAvatar(
@@ -410,7 +432,26 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   ),
                   const SizedBox(height: 10),
 
-                  // Precio
+                  // Precio y Oferta
+                  if (product.enOferta)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade700,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        product.porcentajeDescuento > 0
+                            ? 'OFERTA -${product.porcentajeDescuento}% OFF'
+                            : 'OFERTA ESPECIAL',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.baseline,
                     textBaseline: TextBaseline.alphabetic,
@@ -420,9 +461,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         style: TextStyle(
                           fontSize: 26,
                           fontWeight: FontWeight.w800,
-                          color: accent,
+                          color: product.enOferta ? Colors.red.shade700 : accent,
                         ),
                       ),
+                      if (product.enOferta) ...[
+                        const SizedBox(width: 10),
+                        Text(
+                          'Bs. ${(product.precioBase + (variant?.precioAdicional ?? 0.0)).toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 16,
+                            decoration: TextDecoration.lineThrough,
+                            color: textSecondary,
+                          ),
+                        ),
+                      ],
                       if (variant != null && variant.precioAdicional > 0) ...[
                         const SizedBox(width: 8),
                         Text(
