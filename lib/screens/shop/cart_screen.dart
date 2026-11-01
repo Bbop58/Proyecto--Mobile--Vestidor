@@ -982,10 +982,13 @@ class _CartScreenState extends State<CartScreen> {
                                   ),
                                 );
                               } else {
+                                final err = paypalService.errorMessage ??
+                                    'Aún no has autorizado el pago en la ventana de PayPal o hubo un problema al capturar.';
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Aún no has autorizado el pago en la ventana de PayPal o hubo un problema al capturar.'),
+                                  SnackBar(
+                                    content: Text(err),
                                     backgroundColor: AppTheme.errorColor,
+                                    duration: const Duration(seconds: 5),
                                   ),
                                 );
                               }

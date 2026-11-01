@@ -189,6 +189,7 @@ class WalletService extends ChangeNotifier {
           'monto_bob': amountBob,
           'monto_usd': amountUsd,
         },
+        const Duration(seconds: 40),
       );
 
       _isLoading = false;
