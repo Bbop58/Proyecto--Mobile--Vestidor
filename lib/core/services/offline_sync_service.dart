@@ -1,6 +1,8 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+
 import '../../config/api_config.dart';
 import '../../services/api_service.dart';
 import '../database/database_helper.dart';
@@ -23,15 +25,26 @@ class OfflineSyncService extends ChangeNotifier {
   Map<String, dynamic>? get lastSyncResult => _lastSyncResult;
 
   OfflineSyncService(this._apiService, this._connectivityService) {
+    DatabaseHelper.scopeChanges.addListener(_onScopeChanged);
     refreshPendingCount();
 
     // Auto-sync listener: cuando se detecta conexión o reconexión
     _connectivityService.addListener(_onConnectivityChanged);
   }
 
+  void _onScopeChanged() {
+    _pendingCount = 0;
+    _lastError = null;
+    _lastSyncResult = null;
+    notifyListeners();
+    refreshPendingCount();
+  }
+
   void _onConnectivityChanged() {
     if (_connectivityService.isOnline && _pendingCount > 0 && !_isSyncing) {
-      debugPrint('[OFFLINE SYNC FLUTTER] Red recuperada. Iniciando auto-sincronización...');
+      debugPrint(
+        '[OFFLINE SYNC FLUTTER] Red recuperada. Iniciando auto-sincronización...',
+      );
       syncBatchNow();
       _connectivityService.clearReconnectedFlag();
     }
@@ -55,6 +68,11 @@ class OfflineSyncService extends ChangeNotifier {
     String metodoPago = 'EFECTIVO',
     String? notas,
   }) async {
+    final scope = DatabaseHelper.scope;
+    if (scope == null) {
+      throw StateError('Inicia sesión para registrar operaciones');
+    }
+    final db = _db.forScope(scope);
     final clientOpId = _uuid.v4();
     final now = DateTime.now().toUtc().toIso8601String();
 
@@ -78,7 +96,7 @@ class OfflineSyncService extends ChangeNotifier {
       'created_at': now,
     };
 
-    await _db.insertPendingOperation(op);
+    await db.insertPendingOperation(op);
     await refreshPendingCount();
 
     // Si hay conexión inmediata, enviar al servidor
@@ -97,6 +115,11 @@ class OfflineSyncService extends ChangeNotifier {
     String? clienteId,
     String? notas,
   }) async {
+    final scope = DatabaseHelper.scope;
+    if (scope == null) {
+      throw StateError('Inicia sesión para registrar operaciones');
+    }
+    final db = _db.forScope(scope);
     final clientOpId = _uuid.v4();
     final now = DateTime.now().toUtc().toIso8601String();
 
@@ -119,7 +142,7 @@ class OfflineSyncService extends ChangeNotifier {
       'created_at': now,
     };
 
-    await _db.insertPendingOperation(op);
+    await db.insertPendingOperation(op);
     await refreshPendingCount();
 
     if (_connectivityService.isOnline) {
@@ -133,7 +156,11 @@ class OfflineSyncService extends ChangeNotifier {
   Future<bool> syncBatchNow() async {
     if (!_connectivityService.isOnline || _isSyncing) return false;
 
-    final pendingOps = await _db.getPendingOperations();
+    final scope = DatabaseHelper.scope;
+    if (scope == null) return false;
+    final db = _db.forScope(scope);
+    final pendingOps = await db.getPendingOperations();
+    if (scope != DatabaseHelper.scope) return false;
     if (pendingOps.isEmpty) {
       await refreshPendingCount();
       return true;
@@ -158,19 +185,26 @@ class OfflineSyncService extends ChangeNotifier {
           'cambio_entregado': op['cambio'],
           'metodo_pago': op['metodo_pago'],
           'notas': op['notas'],
-          'items': items.map((i) => {
-            'variante_id': i['variante_id'] ?? i['id'],
-            'cantidad': i['cantidad'] ?? 1,
-            'precio_unitario': i['precio_unitario'] ?? i['precio'] ?? 0.0,
-          }).toList(),
+          'items': items
+              .map(
+                (i) => {
+                  'variante_id': i['variante_id'] ?? i['id'],
+                  'cantidad': i['cantidad'] ?? 1,
+                  'precio_unitario': i['precio_unitario'] ?? i['precio'] ?? 0.0,
+                },
+              )
+              .toList(),
         };
       }).toList();
 
       final response = await _apiService.postAuth(
         ApiConfig.syncBatchUrl,
         {'operations': operationsPayload},
+        null,
+        scope,
       );
 
+      if (scope != DatabaseHelper.scope) return false;
       if (response.success && response.data != null) {
         _lastSyncResult = response.data as Map<String, dynamic>;
         final results = (_lastSyncResult!['results'] as List?) ?? [];
@@ -182,7 +216,7 @@ class OfflineSyncService extends ChangeNotifier {
           final entityId = res['server_entity_id'];
           final errorDetail = res['error_detail'];
 
-          await _db.updateOperationStatus(clientOpId, {
+          await db.updateOperationStatus(clientOpId, {
             'local_status': status,
             'server_receipt': receipt,
             'server_entity_id': entityId,
@@ -193,7 +227,9 @@ class OfflineSyncService extends ChangeNotifier {
         await refreshPendingCount();
         return true;
       } else {
-        _lastError = response.error ?? 'Fallo al procesar el lote de sincronización en el servidor.';
+        _lastError =
+            response.error ??
+            'Fallo al procesar el lote de sincronización en el servidor.';
         return false;
       }
     } catch (e) {
@@ -212,6 +248,7 @@ class OfflineSyncService extends ChangeNotifier {
 
   @override
   void dispose() {
+    DatabaseHelper.scopeChanges.removeListener(_onScopeChanged);
     _connectivityService.removeListener(_onConnectivityChanged);
     super.dispose();
   }

@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
+
 import '../config/api_config.dart';
+import '../core/database/database_helper.dart';
 import '../models/user.dart';
 import 'api_service.dart';
 import 'storage_service.dart';
@@ -33,9 +35,9 @@ class AuthService extends ChangeNotifier {
 
     try {
       final hasToken = await _storageService.hasToken().timeout(
-            const Duration(seconds: 2),
-            onTimeout: () => false,
-          );
+        const Duration(seconds: 2),
+        onTimeout: () => false,
+      );
 
       if (hasToken) {
         await _loadProfile().timeout(
@@ -47,6 +49,7 @@ class AuthService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error initializing auth: $e');
+      DatabaseHelper.activateScope(null);
       await _storageService.clearAll();
     } finally {
       _isLoading = false;
@@ -55,38 +58,40 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-
   /// Registrar nuevo usuario
   Future<bool> register({
     required String email,
     required String password,
     required String fullName,
+    required String tenantId,
   }) async {
     _setLoading(true);
     _clearError();
 
     try {
-      final response = await _apiService.post(
-        ApiConfig.registerUrl,
-        {
-          'email': email,
-          'password': password,
-          'full_name': fullName,
-        },
-      );
+      final response = await _apiService.post(ApiConfig.registerUrl, {
+        'email': email,
+        'password': password,
+        'full_name': fullName,
+        'tenant_id': tenantId,
+      });
 
       if (response.success && response.data != null) {
         final data = response.data;
         if (data is Map<String, dynamic> && data.containsKey('access_token')) {
           final accessToken = data['access_token'] as String;
+          DatabaseHelper.activateScope(null);
           await _storageService.setAccessToken(accessToken);
 
           if (data['refresh_token'] != null) {
-            await _storageService.setRefreshToken(data['refresh_token'] as String);
+            await _storageService.setRefreshToken(
+              data['refresh_token'] as String,
+            );
           }
 
           if (data['user'] != null && data['user'] is Map<String, dynamic>) {
             _currentUser = User.fromJson(data['user'] as Map<String, dynamic>);
+            await _activateCompany();
             _isAuthenticated = true;
           } else {
             await _loadProfile();
@@ -110,10 +115,7 @@ class AuthService extends ChangeNotifier {
   }
 
   /// Iniciar sesión
-  Future<bool> login({
-    required String email,
-    required String password,
-  }) async {
+  Future<bool> login({required String email, required String password}) async {
     _setLoading(true);
     _clearError();
 
@@ -133,26 +135,27 @@ class AuthService extends ChangeNotifier {
     required String email,
     required String password,
   }) async {
-    final response = await _apiService.post(
-      ApiConfig.loginUrl,
-      {
-        'email': email,
-        'password': password,
-      },
-    );
+    final response = await _apiService.post(ApiConfig.loginUrl, {
+      'email': email,
+      'password': password,
+    });
 
     if (response.success && response.data != null) {
       final data = response.data;
       if (data is Map<String, dynamic> && data.containsKey('access_token')) {
         final accessToken = data['access_token'] as String;
+        DatabaseHelper.activateScope(null);
         await _storageService.setAccessToken(accessToken);
 
         if (data['refresh_token'] != null) {
-          await _storageService.setRefreshToken(data['refresh_token'] as String);
+          await _storageService.setRefreshToken(
+            data['refresh_token'] as String,
+          );
         }
 
         if (data['user'] != null && data['user'] is Map<String, dynamic>) {
           _currentUser = User.fromJson(data['user'] as Map<String, dynamic>);
+          await _activateCompany();
           _isAuthenticated = true;
         } else {
           await _loadProfile();
@@ -174,11 +177,14 @@ class AuthService extends ChangeNotifier {
 
     try {
       // Notificar al backend para invalidar el token
-      await _apiService.postAuth(ApiConfig.logoutUrl);
+      await _apiService.postAuth(ApiConfig.logoutUrl, {
+        'refresh_token': await _storageService.getRefreshToken(),
+      });
     } catch (e) {
       debugPrint('Error notificando logout al backend: $e');
     } finally {
       // Limpiar estado local en cualquier caso
+      DatabaseHelper.activateScope(null);
       await _storageService.clearAll();
       _currentUser = null;
       _isAuthenticated = false;
@@ -191,17 +197,22 @@ class AuthService extends ChangeNotifier {
     try {
       final response = await _apiService.getAuth(ApiConfig.profileUrl);
 
-      if (response.success && response.data != null && response.data is Map<String, dynamic>) {
+      if (response.success &&
+          response.data != null &&
+          response.data is Map<String, dynamic>) {
         _currentUser = User.fromJson(response.data as Map<String, dynamic>);
+        await _activateCompany();
         _isAuthenticated = true;
       } else {
         // Token inválido o expirado
+        DatabaseHelper.activateScope(null);
         await _storageService.clearAll();
         _currentUser = null;
         _isAuthenticated = false;
       }
     } catch (e) {
       debugPrint('Error al cargar perfil: $e');
+      DatabaseHelper.activateScope(null);
       await _storageService.clearAll();
       _currentUser = null;
       _isAuthenticated = false;
@@ -220,7 +231,9 @@ class AuthService extends ChangeNotifier {
 
       final response = await _apiService.putAuth(ApiConfig.profileUrl, body);
 
-      if (response.success && response.data != null && response.data is Map<String, dynamic>) {
+      if (response.success &&
+          response.data != null &&
+          response.data is Map<String, dynamic>) {
         _currentUser = User.fromJson(response.data as Map<String, dynamic>);
         return true;
       } else {
@@ -245,13 +258,10 @@ class AuthService extends ChangeNotifier {
     _clearError();
 
     try {
-      final response = await _apiService.postAuth(
-        ApiConfig.changePasswordUrl,
-        {
-          'current_password': currentPassword,
-          'new_password': newPassword,
-        },
-      );
+      final response = await _apiService.postAuth(ApiConfig.changePasswordUrl, {
+        'current_password': currentPassword,
+        'new_password': newPassword,
+      });
 
       if (response.success) {
         String msg = 'Contraseña actualizada exitosamente';
@@ -275,6 +285,24 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getRegistrationCompanies() async {
+    final response = await _apiService.get(ApiConfig.publicTenantsUrl);
+    if (!response.success || response.data is! List) {
+      throw StateError('No se pudieron cargar las empresas');
+    }
+    return (response.data as List)
+        .map((x) => Map<String, dynamic>.from(x as Map))
+        .toList();
+  }
+
+  Future<void> _activateCompany() async {
+    final user = _currentUser;
+    if (user == null || user.tenantId == null) {
+      throw StateError('La cuenta no tiene empresa');
+    }
+    await _storageService.setUserId(user.id);
+    DatabaseHelper.activateScope('${user.tenantId}:${user.id}');
+  }
 
   // Helpers privados
   void _setLoading(bool value) {
@@ -291,4 +319,3 @@ class AuthService extends ChangeNotifier {
     _error = null;
   }
 }
-

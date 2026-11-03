@@ -1,6 +1,7 @@
 /// Modelo de usuario que refleja el schema del backend
 class User {
   final String id;
+  final String? tenantId;
   final String email;
   final String fullName;
   final bool isActive;
@@ -9,6 +10,7 @@ class User {
 
   User({
     required this.id,
+    this.tenantId,
     required this.email,
     required this.fullName,
     required this.isActive,
@@ -19,6 +21,7 @@ class User {
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['id']?.toString() ?? '',
+      tenantId: json['tenant_id']?.toString(),
       email: json['email']?.toString() ?? '',
       fullName: json['full_name']?.toString() ?? '',
       isActive: json['is_active'] as bool? ?? true,
@@ -30,6 +33,7 @@ class User {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'tenant_id': tenantId,
       'email': email,
       'full_name': fullName,
       'is_active': isActive,
@@ -48,6 +52,7 @@ class User {
   }) {
     return User(
       id: id ?? this.id,
+      tenantId: tenantId,
       email: email ?? this.email,
       fullName: fullName ?? this.fullName,
       isActive: isActive ?? this.isActive,
@@ -56,4 +61,3 @@ class User {
     );
   }
 }
-

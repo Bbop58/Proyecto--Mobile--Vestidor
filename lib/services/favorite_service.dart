@@ -1,5 +1,7 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+
 import '../config/api_config.dart';
 import '../models/product.dart';
 import '../core/database/database_helper.dart';
@@ -19,8 +21,23 @@ class FavoriteService extends ChangeNotifier {
   String? _errorMessage;
 
   FavoriteService(this._api, this._connectivity, this._storage) {
+    DatabaseHelper.scopeChanges.addListener(_onScopeChanged);
     // Carga inicial local
     loadLocalFavorites();
+  }
+
+  void _onScopeChanged() {
+    _favorites = [];
+    _favoriteIds.clear();
+    _errorMessage = null;
+    notifyListeners();
+    loadLocalFavorites();
+  }
+
+  @override
+  void dispose() {
+    DatabaseHelper.scopeChanges.removeListener(_onScopeChanged);
+    super.dispose();
   }
 
   List<Product> get favorites => List.unmodifiable(_favorites);
@@ -32,11 +49,14 @@ class FavoriteService extends ChangeNotifier {
 
   /// Carga inicial rápida desde SQLite
   Future<void> loadLocalFavorites() async {
+    final scope = DatabaseHelper.scope;
     try {
       final userId = await _storage.getUserId();
       final local = await _db.getLocalFavorites(userId);
+      if (scope != DatabaseHelper.scope) return;
       _favorites = local.map((row) {
-        final json = jsonDecode(row['product_json'] as String) as Map<String, dynamic>;
+        final json =
+            jsonDecode(row['product_json'] as String) as Map<String, dynamic>;
         return Product.fromJson(json);
       }).toList();
 
@@ -50,6 +70,7 @@ class FavoriteService extends ChangeNotifier {
 
   /// Consulta la lista de favoritos desde el servidor y sincroniza con SQLite
   Future<void> fetchFavorites() async {
+    final scope = DatabaseHelper.scope;
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -59,6 +80,7 @@ class FavoriteService extends ChangeNotifier {
     if (_connectivity.isOnline) {
       try {
         final res = await _api.getAuth('${ApiConfig.apiUrl}/favorites');
+        if (scope != DatabaseHelper.scope) return;
         if (res.success && res.data is List) {
           final list = res.data as List;
           final List<Product> fetched = [];
@@ -70,7 +92,11 @@ class FavoriteService extends ChangeNotifier {
               final prod = Product.fromJson(prodMap);
               fetched.add(prod);
               // Guardar copia local en SQLite
-              await _db.saveLocalFavorite(prod.id, userId, jsonEncode(prod.toJson()));
+              await _db.saveLocalFavorite(
+                prod.id,
+                userId,
+                jsonEncode(prod.toJson()),
+              );
             }
           }
 
@@ -119,14 +145,17 @@ class FavoriteService extends ChangeNotifier {
       _favorites.insert(0, product);
       notifyListeners();
 
-      await _db.saveLocalFavorite(product.id, userId, jsonEncode(product.toJson()));
+      await _db.saveLocalFavorite(
+        product.id,
+        userId,
+        jsonEncode(product.toJson()),
+      );
 
       if (_connectivity.isOnline) {
         try {
-          await _api.postAuth(
-            '${ApiConfig.apiUrl}/favorites',
-            {'product_id': product.id},
-          );
+          await _api.postAuth('${ApiConfig.apiUrl}/favorites', {
+            'product_id': product.id,
+          });
         } catch (e) {
           debugPrint('[FAVORITE SERVICE] Error agregando remoto: $e');
         }
@@ -135,4 +164,3 @@ class FavoriteService extends ChangeNotifier {
     }
   }
 }
-

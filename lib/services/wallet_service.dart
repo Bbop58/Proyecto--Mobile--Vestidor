@@ -1,6 +1,8 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+
 import '../config/api_config.dart';
 import '../models/wallet.dart';
 import 'api_service.dart';
@@ -21,19 +23,30 @@ class WalletService extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
 
-  UserWallet? get wallet => _wallet;
-  double get saldo => _wallet?.saldoActual ?? 0.0;
-  List<WalletTxItem> get transactions => _transactions;
+  UserWallet? get wallet =>
+      _wallet?.userId == DatabaseHelper.scope?.split(':').last ? _wallet : null;
+  double get saldo => wallet?.saldoActual ?? 0.0;
+  List<WalletTxItem> get transactions => wallet == null ? [] : _transactions;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
   WalletService(this._apiService, this._connectivity, this._storage) {
+    DatabaseHelper.scopeChanges.addListener(_onScopeChanged);
     _connectivity.addListener(_onConnectivityChanged);
+  }
+
+  void _onScopeChanged() {
+    _wallet = null;
+    _transactions = [];
+    _errorMessage = null;
+    notifyListeners();
   }
 
   void _onConnectivityChanged() {
     if (_connectivity.isOnline) {
-      debugPrint('[WALLET SERVICE] Red reanudada. Sincronizando órdenes offline y refrescando saldo...');
+      debugPrint(
+        '[WALLET SERVICE] Red reanudada. Sincronizando órdenes offline y refrescando saldo...',
+      );
       syncOfflineWalletOrders();
       fetchWallet();
     }
@@ -111,7 +124,11 @@ class WalletService extends ChangeNotifier {
         final res = await _apiService.getAuth(ApiConfig.walletHistoryUrl);
         if (res.success && res.data != null) {
           final list = res.data as List;
-          _transactions = list.map((item) => WalletTxItem.fromJson(item as Map<String, dynamic>)).toList();
+          _transactions = list
+              .map(
+                (item) => WalletTxItem.fromJson(item as Map<String, dynamic>),
+              )
+              .toList();
 
           // Guardar copia local en SQLite
           final txsToCache = list.map((item) {
@@ -149,10 +166,9 @@ class WalletService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final res = await _apiService.postAuth(
-        ApiConfig.walletTopupPaypalUrl,
-        {'monto_bob': amountBob},
-      );
+      final res = await _apiService.postAuth(ApiConfig.walletTopupPaypalUrl, {
+        'monto_bob': amountBob,
+      });
 
       _isLoading = false;
       notifyListeners();
@@ -182,15 +198,11 @@ class WalletService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final res = await _apiService.postAuth(
-        ApiConfig.walletTopupPaypalUrl,
-        {
-          'order_id': orderId,
-          'monto_bob': amountBob,
-          'monto_usd': amountUsd,
-        },
-        const Duration(seconds: 40),
-      );
+      final res = await _apiService.postAuth(ApiConfig.walletTopupPaypalUrl, {
+        'order_id': orderId,
+        'monto_bob': amountBob,
+        'monto_usd': amountUsd,
+      }, const Duration(seconds: 40));
 
       _isLoading = false;
 
@@ -228,11 +240,17 @@ class WalletService extends ChangeNotifier {
     required List<Map<String, dynamic>> items,
     required double totalAmount,
   }) async {
-    final userId = await _storage.getUserId() ?? 'cliente_anon';
+    final scope = DatabaseHelper.scope;
+    final currentWallet = wallet;
+    if (scope == null || currentWallet == null) {
+      throw StateError('Inicia sesión y carga tu billetera');
+    }
+    final db = _db.forScope(scope);
+    final userId = scope.split(':').last;
 
     // 1. Verificación de saldo local garantizado
-    if (_wallet == null || _wallet!.saldoActual < totalAmount) {
-      final current = _wallet?.saldoActual ?? 0.0;
+    if (wallet == null || currentWallet.saldoActual < totalAmount) {
+      final current = wallet?.saldoActual ?? 0.0;
       throw Exception(
         'Saldo insuficiente en tu Billetera Virtual.\nSaldo disponible: Bs. ${current.toStringAsFixed(2)}\nTotal a pagar: Bs. ${totalAmount.toStringAsFixed(2)}',
       );
@@ -240,11 +258,11 @@ class WalletService extends ChangeNotifier {
 
     final clientOpId = _uuid.v4();
     final nowIso = DateTime.now().toUtc().toIso8601String();
-    final nuevoSaldo = _wallet!.saldoActual - totalAmount;
-    final nuevoNonce = _wallet!.nonceSecuencia + 1;
+    final nuevoSaldo = currentWallet.saldoActual - totalAmount;
+    final nuevoNonce = currentWallet.nonceSecuencia + 1;
 
     // 2. Descuento atómico en SQLite local
-    await _db.updateLocalWalletBalance(
+    await db.updateLocalWalletBalance(
       userId: userId,
       nuevoSaldo: nuevoSaldo,
       nuevoNonce: nuevoNonce,
@@ -256,12 +274,13 @@ class WalletService extends ChangeNotifier {
       'user_id': userId,
       'tipo': 'PAGO_VENTA_OFFLINE',
       'monto': -totalAmount,
-      'saldo_anterior': _wallet!.saldoActual,
+      'saldo_anterior': currentWallet.saldoActual,
       'saldo_posterior': nuevoSaldo,
-      'descripcion': 'Pago de pedido con Billetera Virtual (${items.length} prendas)',
+      'descripcion':
+          'Pago de pedido con Billetera Virtual (${items.length} prendas)',
       'created_at': nowIso,
     };
-    await _db.saveLocalWalletTransactions([txLocal]);
+    await db.saveLocalWalletTransactions([txLocal]);
 
     // 3. Registrar orden en la cola de contingencia offline de la billetera
     final walletOrder = {
@@ -269,8 +288,8 @@ class WalletService extends ChangeNotifier {
       'cliente_id': userId,
       'sucursal_id': sucursalId,
       'monto_total': totalAmount,
-      'nonce_usado': _wallet!.nonceSecuencia,
-      'firma_usada': _wallet!.firmaBalance,
+      'nonce_usado': currentWallet.nonceSecuencia,
+      'firma_usada': currentWallet.firmaBalance,
       'items_json': jsonEncode(items),
       'fecha_local': nowIso,
       'status': 'PENDIENTE',
@@ -278,17 +297,23 @@ class WalletService extends ChangeNotifier {
       'error_detail': null,
       'created_at': nowIso,
     };
-    await _db.insertOfflineWalletOrder(walletOrder);
+    await db.insertOfflineWalletOrder(walletOrder);
 
+    if (scope != DatabaseHelper.scope) {
+      return {
+        'success': false,
+        'error': 'La sesión cambió; la operación permanece con su propietario',
+      };
+    }
     // Actualizar estado en memoria
     _wallet = UserWallet(
-      id: _wallet!.id,
-      userId: _wallet!.userId,
+      id: currentWallet.id,
+      userId: currentWallet.userId,
       saldoActual: nuevoSaldo,
-      saldoRetenido: _wallet!.saldoRetenido,
+      saldoRetenido: currentWallet.saldoRetenido,
       nonceSecuencia: nuevoNonce,
-      firmaBalance: _wallet!.firmaBalance,
-      moneda: _wallet!.moneda,
+      firmaBalance: currentWallet.firmaBalance,
+      moneda: currentWallet.moneda,
       ultimoSyncAt: DateTime.now(),
     );
     _transactions.insert(0, WalletTxItem.fromJson(txLocal));
@@ -311,7 +336,11 @@ class WalletService extends ChangeNotifier {
   Future<bool> syncOfflineWalletOrders() async {
     if (!_connectivity.isOnline) return false;
 
-    final pending = await _db.getPendingOfflineWalletOrders();
+    final scope = DatabaseHelper.scope;
+    if (scope == null) return false;
+    final db = _db.forScope(scope);
+    final pending = await db.getPendingOfflineWalletOrders();
+    if (scope != DatabaseHelper.scope) return false;
     if (pending.isEmpty) return true;
 
     try {
@@ -321,26 +350,36 @@ class WalletService extends ChangeNotifier {
           'client_operation_id': row['client_operation_id'],
           'sucursal_id': row['sucursal_id'],
           'monto_total': row['monto_total'],
-          'items': items.map((i) => {
-            'variante_id': i['variante_id'] ?? i['id'],
-            'cantidad': i['cantidad'] ?? 1,
-            'precio_unitario': i['precio_unitario'] ?? i['precio'] ?? 0.0,
-          }).toList(),
+          'items': items
+              .map(
+                (i) => {
+                  'variante_id': i['variante_id'] ?? i['id'],
+                  'cantidad': i['cantidad'] ?? 1,
+                  'precio_unitario': i['precio_unitario'] ?? i['precio'] ?? 0.0,
+                },
+              )
+              .toList(),
           'fecha_local': row['fecha_local'],
           'nonce': row['nonce_usado'] ?? 0,
           'firma_cliente': row['firma_usada'] ?? '',
-          'codigo_autorizacion_offline': row['firma_usada'] ?? 'AUTH_${row['client_operation_id'].toString().substring(0, 8)}',
+          'codigo_autorizacion_offline':
+              row['firma_usada'] ??
+              'AUTH_${row['client_operation_id'].toString().substring(0, 8)}',
         };
       }).toList();
 
       final res = await _apiService.postAuth(
         ApiConfig.walletSyncOfflineUrl,
         {'orders': ordersPayload},
+        null,
+        scope,
       );
 
       if (res.success && res.data != null) {
         final data = res.data as Map<String, dynamic>;
-        final results = (data['results'] as List?) ?? (data['detalles'] as List?) ?? [];
+        if (scope != DatabaseHelper.scope) return false;
+        final results =
+            (data['results'] as List?) ?? (data['detalles'] as List?) ?? [];
 
         for (final r in results) {
           final opId = r['client_operation_id']?.toString() ?? '';
@@ -348,7 +387,7 @@ class WalletService extends ChangeNotifier {
           final receipt = r['receipt_number']?.toString();
           final err = r['error_detail']?.toString();
 
-          await _db.updateOfflineWalletOrderStatus(
+          await db.updateOfflineWalletOrderStatus(
             opId,
             status: status,
             serverReceipt: receipt,
@@ -356,7 +395,9 @@ class WalletService extends ChangeNotifier {
           );
         }
 
-        final successOrders = results.where((r) => r['status'] == 'CONFIRMED' || r['status'] == 'OK').toList();
+        final successOrders = results
+            .where((r) => r['status'] == 'CONFIRMED' || r['status'] == 'OK')
+            .toList();
         if (successOrders.isNotEmpty) {
           final receipts = successOrders
               .map((r) => r['receipt_number']?.toString() ?? '')
@@ -383,8 +424,8 @@ class WalletService extends ChangeNotifier {
 
   @override
   void dispose() {
+    DatabaseHelper.scopeChanges.removeListener(_onScopeChanged);
     _connectivity.removeListener(_onConnectivityChanged);
     super.dispose();
   }
 }
-

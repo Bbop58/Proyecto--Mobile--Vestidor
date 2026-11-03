@@ -1,6 +1,11 @@
 import 'dart:convert';
+
+import '../core/database/database_helper.dart';
+
 import 'dart:io';
+
 import 'package:http/http.dart' as http;
+
 import 'storage_service.dart';
 import '../config/api_config.dart';
 
@@ -9,13 +14,14 @@ class ApiService {
   final StorageService _storageService;
   final http.Client _client;
 
-  ApiService(this._storageService) : _client = http.Client();
+  ApiService(this._storageService, {http.Client? client})
+    : _client = client ?? http.Client();
 
   /// Headers base con Content-Type JSON
   Map<String, String> get _baseHeaders => {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      };
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
 
   /// Headers con token de autorización
   Future<Map<String, String>> _authHeaders() async {
@@ -27,12 +33,28 @@ class ApiService {
     return headers;
   }
 
-  /// GET request (sin auth)
+  /// GET público: incluye identidad cuando existe para respetar la empresa
   Future<ApiResponse> get(String url) async {
     try {
+      final scope = DatabaseHelper.scope;
+      final headers = await _authHeaders();
+      if (scope != DatabaseHelper.scope) {
+        return ApiResponse(
+          success: false,
+          statusCode: 401,
+          error: 'La sesión cambió',
+        );
+      }
       final response = await _client
-          .get(Uri.parse(url), headers: _baseHeaders)
+          .get(Uri.parse(url), headers: headers)
           .timeout(ApiConfig.connectionTimeout);
+      if (scope != DatabaseHelper.scope) {
+        return ApiResponse(
+          success: false,
+          statusCode: 401,
+          error: 'La sesión cambió',
+        );
+      }
       return _handleResponse(response);
     } on SocketException {
       return ApiResponse(
@@ -53,11 +75,7 @@ class ApiService {
   Future<ApiResponse> post(String url, Map<String, dynamic> body) async {
     try {
       final response = await _client
-          .post(
-            Uri.parse(url),
-            headers: _baseHeaders,
-            body: jsonEncode(body),
-          )
+          .post(Uri.parse(url), headers: _baseHeaders, body: jsonEncode(body))
           .timeout(ApiConfig.connectionTimeout);
       return _handleResponse(response);
     } on SocketException {
@@ -76,10 +94,22 @@ class ApiService {
   }
 
   /// POST request (con auth)
-  Future<ApiResponse> postAuth(String url,
-      [Map<String, dynamic>? body, Duration? timeout]) async {
+  Future<ApiResponse> postAuth(
+    String url, [
+    Map<String, dynamic>? body,
+    Duration? timeout,
+    String? expectedScope,
+  ]) async {
     try {
+      final scope = expectedScope ?? DatabaseHelper.scope;
       final headers = await _authHeaders();
+      if (scope != DatabaseHelper.scope) {
+        return ApiResponse(
+          success: false,
+          statusCode: 401,
+          error: 'La sesión cambió',
+        );
+      }
       final response = await _client
           .post(
             Uri.parse(url),
@@ -87,6 +117,13 @@ class ApiService {
             body: body != null ? jsonEncode(body) : null,
           )
           .timeout(timeout ?? ApiConfig.connectionTimeout);
+      if (scope != DatabaseHelper.scope) {
+        return ApiResponse(
+          success: false,
+          statusCode: 401,
+          error: 'La sesión cambió',
+        );
+      }
       return _handleResponse(response);
     } on SocketException {
       return ApiResponse(
@@ -104,8 +141,7 @@ class ApiService {
   }
 
   /// POST form-urlencoded (para login OAuth2)
-  Future<ApiResponse> postForm(
-      String url, Map<String, String> body) async {
+  Future<ApiResponse> postForm(String url, Map<String, String> body) async {
     try {
       final response = await _client
           .post(
@@ -136,10 +172,18 @@ class ApiService {
   /// GET request (con auth)
   Future<ApiResponse> getAuth(String url) async {
     try {
+      final scope = DatabaseHelper.scope;
       final headers = await _authHeaders();
       final response = await _client
           .get(Uri.parse(url), headers: headers)
           .timeout(ApiConfig.connectionTimeout);
+      if (scope != DatabaseHelper.scope) {
+        return ApiResponse(
+          success: false,
+          statusCode: 401,
+          error: 'La sesión cambió',
+        );
+      }
       return _handleResponse(response);
     } on SocketException {
       return ApiResponse(
@@ -157,16 +201,11 @@ class ApiService {
   }
 
   /// PUT request (con auth)
-  Future<ApiResponse> putAuth(
-      String url, Map<String, dynamic> body) async {
+  Future<ApiResponse> putAuth(String url, Map<String, dynamic> body) async {
     try {
       final headers = await _authHeaders();
       final response = await _client
-          .put(
-            Uri.parse(url),
-            headers: headers,
-            body: jsonEncode(body),
-          )
+          .put(Uri.parse(url), headers: headers, body: jsonEncode(body))
           .timeout(ApiConfig.connectionTimeout);
       return _handleResponse(response);
     } on SocketException {
@@ -209,7 +248,9 @@ class ApiService {
 
   /// PATCH request (con auth)
   Future<ApiResponse> patchAuth(
-      String url, [Map<String, dynamic>? body]) async {
+    String url, [
+    Map<String, dynamic>? body,
+  ]) async {
     try {
       final headers = await _authHeaders();
       final response = await _client
@@ -247,17 +288,14 @@ class ApiService {
     }
 
     if (statusCode >= 200 && statusCode < 300) {
-      return ApiResponse(
-        success: true,
-        statusCode: statusCode,
-        data: data,
-      );
+      return ApiResponse(success: true, statusCode: statusCode, data: data);
     }
 
     // Extraer mensaje de error del backend
     String errorMessage;
     if (data is Map<String, dynamic>) {
-      errorMessage = data['detail']?.toString() ??
+      errorMessage =
+          data['detail']?.toString() ??
           data['message']?.toString() ??
           'Error desconocido';
     } else {

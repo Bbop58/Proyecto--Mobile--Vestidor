@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../services/auth_service.dart';
@@ -19,6 +20,9 @@ class _RegisterScreenState extends State<RegisterScreen>
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  List<Map<String, dynamic>> _companies = [];
+  String? _tenantId;
+  String? _companiesError;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   late AnimationController _animController;
@@ -32,16 +36,36 @@ class _RegisterScreenState extends State<RegisterScreen>
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
-    _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeOut),
-    );
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.12),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
-    );
+    _fadeAnim = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOut));
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
+        );
     _animController.forward();
+    _loadCompanies();
+  }
+
+  Future<void> _loadCompanies() async {
+    try {
+      final companies = await context
+          .read<AuthService>()
+          .getRegistrationCompanies();
+      if (mounted) {
+        setState(() {
+          _companies = companies;
+          _companiesError = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _companiesError = 'No se pudieron cargar las empresas';
+        });
+      }
+    }
   }
 
   @override
@@ -62,6 +86,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       email: _emailController.text.trim(),
       password: _passwordController.text,
       fullName: _nameController.text.trim(),
+      tenantId: _tenantId!,
     );
 
     if (success && mounted) {
@@ -112,16 +137,22 @@ class _RegisterScreenState extends State<RegisterScreen>
               right: 16,
               child: InkWell(
                 onTap: () => themeService.toggleTheme(),
-                borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                borderRadius: BorderRadius.circular(
+                  AppTheme.borderRadiusMedium,
+                ),
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: AppTheme.getCardBg(context),
-                    borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                    borderRadius: BorderRadius.circular(
+                      AppTheme.borderRadiusMedium,
+                    ),
                     border: Border.all(color: border, width: 1),
                   ),
                   child: Icon(
-                    isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                    isDark
+                        ? Icons.light_mode_outlined
+                        : Icons.dark_mode_outlined,
                     size: 20,
                     color: accent,
                   ),
@@ -132,7 +163,10 @@ class _RegisterScreenState extends State<RegisterScreen>
             // Form Content
             Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 24,
+                ),
                 child: FadeTransition(
                   opacity: _fadeAnim,
                   child: SlideTransition(
@@ -188,6 +222,34 @@ class _RegisterScreenState extends State<RegisterScreen>
                               ),
                               const SizedBox(height: 24),
 
+                              if (_companiesError != null)
+                                TextButton(
+                                  onPressed: _loadCompanies,
+                                  child: Text('$_companiesError. Reintentar'),
+                                ),
+                              DropdownButtonFormField<String>(
+                                initialValue: _tenantId,
+                                decoration: const InputDecoration(
+                                  labelText: 'Empresa donde comprarás',
+                                ),
+                                items: _companies
+                                    .map(
+                                      (company) => DropdownMenuItem<String>(
+                                        value: company['id'].toString(),
+                                        child: Text(
+                                          company['nombre'].toString(),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) => setState(() {
+                                  _tenantId = value;
+                                }),
+                                validator: (value) => value == null
+                                    ? 'Selecciona una empresa'
+                                    : null,
+                              ),
+                              const SizedBox(height: 16),
                               // Nombre completo
                               Text(
                                 'Nombre completo',
@@ -248,8 +310,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                                   if (value == null || value.isEmpty) {
                                     return 'El correo es obligatorio';
                                   }
-                                  if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
-                                      .hasMatch(value)) {
+                                  if (!RegExp(
+                                    r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                                  ).hasMatch(value)) {
                                     return 'Ingresa un correo electrónico válido';
                                   }
                                   return null;
@@ -360,8 +423,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                                   return SizedBox(
                                     height: 46,
                                     child: ElevatedButton(
-                                      onPressed:
-                                          auth.isLoading ? null : _handleRegister,
+                                      onPressed: auth.isLoading
+                                          ? null
+                                          : _handleRegister,
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: accent,
                                         foregroundColor: Colors.white,
@@ -399,10 +463,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 padding: const EdgeInsets.only(top: 18),
                                 decoration: BoxDecoration(
                                   border: Border(
-                                    top: BorderSide(
-                                      color: border,
-                                      width: 1,
-                                    ),
+                                    top: BorderSide(color: border, width: 1),
                                   ),
                                 ),
                                 child: Row(
