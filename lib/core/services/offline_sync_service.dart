@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -14,6 +15,11 @@ class OfflineSyncService extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper.instance;
   final Uuid _uuid = const Uuid();
 
+  final Set<String> _running = {};
+  Timer? _retryTimer;
+  int _failures = 0;
+  bool _paused = false;
+  bool _disposed = false;
   int _pendingCount = 0;
   bool _isSyncing = false;
   String? _lastError;
@@ -33,6 +39,9 @@ class OfflineSyncService extends ChangeNotifier {
   }
 
   void _onScopeChanged() {
+    _retryTimer?.cancel();
+    _paused = false;
+    _isSyncing = false;
     _pendingCount = 0;
     _lastError = null;
     _lastSyncResult = null;
@@ -51,9 +60,11 @@ class OfflineSyncService extends ChangeNotifier {
   }
 
   Future<int> refreshPendingCount() async {
-    _pendingCount = await _db.getPendingCount();
-    notifyListeners();
-    return _pendingCount;
+    final scope = DatabaseHelper.scope;
+    if (scope == null || _disposed) return 0;
+    final count = await _db.forScope(scope).getPendingCount();
+    if (!_disposed && scope == DatabaseHelper.scope) { _pendingCount = count; notifyListeners(); }
+    return count;
   }
 
   /// Registra una venta de mostrador en contingencia offline
@@ -80,7 +91,7 @@ class OfflineSyncService extends ChangeNotifier {
       'client_operation_id': clientOpId,
       'operation_type': 'VENTA_CONTADO_OFFLINE',
       'sucursal_id': sucursalId,
-      'cajero_id': cajeroId,
+      'cajero_id': cajeroId ?? scope.split(':').last,
       'cliente_id': clienteId,
       'fecha_local': now,
       'monto_total': montoTotal,
@@ -97,6 +108,7 @@ class OfflineSyncService extends ChangeNotifier {
     };
 
     await db.insertPendingOperation(op);
+    if (scope != DatabaseHelper.scope) throw StateError("La sesión cambió; operación conservada con su propietario");
     await refreshPendingCount();
 
     // Si hay conexión inmediata, enviar al servidor
@@ -127,7 +139,8 @@ class OfflineSyncService extends ChangeNotifier {
       'client_operation_id': clientOpId,
       'operation_type': 'RESERVA_OFFLINE',
       'sucursal_id': sucursalId,
-      'cliente_id': clienteId,
+      'cliente_id': clienteId ?? scope.split(':').last,
+      'fecha_hora_esperada': DateTime.parse(now).add(const Duration(hours:24)).toIso8601String(),
       'fecha_local': now,
       'monto_total': montoTotal,
       'monto_recibido': 0.0,
@@ -143,6 +156,7 @@ class OfflineSyncService extends ChangeNotifier {
     };
 
     await db.insertPendingOperation(op);
+    if (scope != DatabaseHelper.scope) throw StateError("La sesión cambió; operación conservada con su propietario");
     await refreshPendingCount();
 
     if (_connectivityService.isOnline) {
@@ -153,101 +167,95 @@ class OfflineSyncService extends ChangeNotifier {
   }
 
   /// Sincroniza todas las operaciones pendientes enviándolas en lote a POST /api/v1/sync/batch
-  Future<bool> syncBatchNow() async {
-    if (!_connectivityService.isOnline || _isSyncing) return false;
+  void _retry(String scope) {
+    _retryTimer?.cancel();
+    final seconds = 1 << _failures.clamp(0,6); _failures++;
+    _retryTimer = Timer(Duration(seconds: seconds > 60 ? 60 : seconds), () {
+      if (!_disposed && scope == DatabaseHelper.scope && !_paused) syncBatchNow();
+    });
+  }
 
+  static Map<String,dynamic> payload(Map<String,dynamic> op) => {
+    'client_operation_id':op['client_operation_id'], 'operation_type':op['operation_type'],
+    'sucursal_id':op['sucursal_id'], 'cajero_id':op['cajero_id'], 'cliente_id':op['cliente_id'],
+    'fecha_local':op['fecha_local'], 'monto_total':op['monto_total'],
+    'fecha_hora_esperada':op['fecha_hora_esperada'], 'codigo_cupon':op['codigo_cupon'],
+    'supersedes_operation_id':op['supersedes_operation_id'],
+    'monto_efectivo_recibido':op['monto_recibido'], 'cambio_entregado':op['cambio'],
+    'metodo_pago':op['metodo_pago'], 'notas':op['notas'],
+    'items': (jsonDecode(op['items_json'] as String) as List).map((i) => {
+      'variante_id':i['variante_id'] ?? i['id'], 'cantidad':i['cantidad'] ?? 1,
+      'precio_unitario':i['precio_unitario'] ?? i['precio'] ?? 0.0}).toList(),
+  };
+
+  Future<bool> syncBatchNow({bool force = false}) async {
     final scope = DatabaseHelper.scope;
-    if (scope == null) return false;
-    final db = _db.forScope(scope);
-    final pendingOps = await db.getPendingOperations();
-    if (scope != DatabaseHelper.scope) return false;
-    if (pendingOps.isEmpty) {
-      await refreshPendingCount();
-      return true;
-    }
-
-    _isSyncing = true;
-    _lastError = null;
+    if (_disposed || scope == null || !_connectivityService.isOnline || _running.contains(scope) || (_paused && !force)) return false;
+    _running.add(scope); _isSyncing = true; _lastError = null;
+    if (force) _paused = false;
     notifyListeners();
-
+    final db = _db.forScope(scope);
     try {
-      final operationsPayload = pendingOps.map((op) {
-        final items = jsonDecode(op['items_json'] as String) as List;
-        return {
-          'client_operation_id': op['client_operation_id'],
-          'operation_type': op['operation_type'],
-          'sucursal_id': op['sucursal_id'],
-          'cajero_id': op['cajero_id'],
-          'cliente_id': op['cliente_id'],
-          'fecha_local': op['fecha_local'],
-          'monto_total': op['monto_total'],
-          'monto_efectivo_recibido': op['monto_recibido'],
-          'cambio_entregado': op['cambio'],
-          'metodo_pago': op['metodo_pago'],
-          'notas': op['notas'],
-          'items': items
-              .map(
-                (i) => {
-                  'variante_id': i['variante_id'] ?? i['id'],
-                  'cantidad': i['cantidad'] ?? 1,
-                  'precio_unitario': i['precio_unitario'] ?? i['precio'] ?? 0.0,
-                },
-              )
-              .toList(),
-        };
-      }).toList();
-
-      final response = await _apiService.postAuth(
-        ApiConfig.syncBatchUrl,
-        {'operations': operationsPayload},
-        null,
-        scope,
-      );
-
-      if (scope != DatabaseHelper.scope) return false;
-      if (response.success && response.data != null) {
-        _lastSyncResult = response.data as Map<String, dynamic>;
-        final results = (_lastSyncResult!['results'] as List?) ?? [];
-
-        for (final res in results) {
-          final clientOpId = res['client_operation_id'];
-          final status = res['status'];
-          final receipt = res['receipt_number'];
-          final entityId = res['server_entity_id'];
-          final errorDetail = res['error_detail'];
-
-          await db.updateOperationStatus(clientOpId, {
-            'local_status': status,
-            'server_receipt': receipt,
-            'server_entity_id': entityId,
-            'error_detail': errorDetail,
-          });
-        }
-
-        await refreshPendingCount();
-        return true;
-      } else {
-        _lastError =
-            response.error ??
-            'Fallo al procesar el lote de sincronización en el servidor.';
+      final pending = (await db.getPendingOperations()).take(100).toList();
+      if (_disposed || scope != DatabaseHelper.scope) return false;
+      if (pending.isEmpty) return true;
+      final response = await _apiService.postAuth(ApiConfig.syncBatchUrl, {'operations':pending.map(payload).toList()}, null, scope);
+      if (_disposed || scope != DatabaseHelper.scope) return false;
+      if (!response.success || response.data is! Map) {
+        _lastError = response.error ?? 'No se confirmó el lote';
+        if ([400,401,403,422].contains(response.statusCode)) { _paused = true; }
+        else { _retry(scope); }
         return false;
       }
+      final result = Map<String,dynamic>.from(response.data as Map);
+      await db.applySyncResults(pending,result);
+      if (_disposed || scope != DatabaseHelper.scope) return false;
+      _lastSyncResult = result; _failures = 0;
+      if ((result['results'] as List).any((r) => r['status']=='REINTENTAR') || (await db.getPendingOperations()).isNotEmpty) _retry(scope);
+      return true;
     } catch (e) {
-      _lastError = 'Excepción de red: $e';
+      if (!_disposed && scope == DatabaseHelper.scope) { _lastError = 'Pendientes conservados: $e'; _retry(scope); }
       return false;
     } finally {
-      _isSyncing = false;
-      await refreshPendingCount();
-      notifyListeners();
+      _running.remove(scope);
+      if (!_disposed && scope == DatabaseHelper.scope) {
+        _isSyncing = false; await refreshPendingCount();
+      }
     }
   }
 
-  Future<List<Map<String, dynamic>>> getAllOperations() async {
-    return await _db.getAllOperations();
+  Future<List<Map<String,dynamic>>> getAllOperations() async {
+    final scope = DatabaseHelper.scope;
+    if (scope == null) return [];
+    final db=_db.forScope(scope);
+    final result = await db.getAllOperations();
+    final walletRows=await db.getAllWalletOrders();
+    return scope == DatabaseHelper.scope ? [...result,...walletRows.map((r)=>{
+      ...r,'operation_type':'COMPRA_BILLETERA_OFFLINE',
+      'local_status':r['status']=='PENDIENTE'?'LOCAL_PENDIENTE':r['status']})] : [];
+  }
+
+  Future<void> retryRejected(Map<String,dynamic> op) async {
+    final scope = DatabaseHelper.scope;
+    if (scope == null || !_connectivityService.isOnline) throw StateError('Conéctate para verificar la operación original');
+    final response = await _apiService.getAuth('${ApiConfig.syncBatchUrl.replaceFirst('/batch','')}/operations/${op['client_operation_id']}');
+    if (scope != DatabaseHelper.scope) return;
+    final status = response.data;
+    if (!response.success || status is! Map || status['server_entity_id'] != null || !['CONFLICTO','RECHAZADA_POR_STOCK'].contains(status['status'])) {
+      throw StateError('Revisa el efecto original antes de crear otra operación');
+    }
+    final retryDate = DateTime.now().toUtc();
+    final replacement = {...op,'client_operation_id':_uuid.v4(), 'fecha_local':retryDate.toIso8601String(),
+      'server_receipt':null,'server_entity_id':null,'error_detail':null,'synced_at':null,'replacement_id':null,
+      if (op['operation_type']=='RESERVA_OFFLINE') 'fecha_hora_esperada':retryDate.add(const Duration(hours:24)).toIso8601String()};
+    await _db.forScope(scope).replaceRejectedOperation(op['client_operation_id'].toString(),replacement);
+    if (scope == DatabaseHelper.scope) await syncBatchNow(force:true);
   }
 
   @override
   void dispose() {
+    _disposed = true;
+    _retryTimer?.cancel();
     DatabaseHelper.scopeChanges.removeListener(_onScopeChanged);
     _connectivityService.removeListener(_onConnectivityChanged);
     super.dispose();

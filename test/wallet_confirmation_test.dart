@@ -32,9 +32,10 @@ class _Api extends ApiService {
     if (outcome == 'TIMEOUT') return ApiResponse(success: false, statusCode: 504, error: 'unknown result');
     final id = (body!['orders'] as List).first['client_operation_id'];
     if (outcome == 'CONFIRMADA') balance = 10;
-    return ApiResponse(success: true, statusCode: 200, data: {'results': [
+    return ApiResponse(success: true, statusCode: 200, data: {'nuevo_saldo':balance,'saldo_retenido':held,'nuevo_nonce':2,'nueva_firma':'verified-after-sync','results': [
       {'client_operation_id': id, 'status': outcome,
         if (outcome == 'CONFIRMADA') 'receipt_number': 'SERVER-RECEIPT',
+        if (outcome == 'CONFIRMADA') 'server_entity_id': 'server-sale',
         if (outcome != 'CONFIRMADA') 'error_detail': 'Rejected by server'}]});
   }
 }

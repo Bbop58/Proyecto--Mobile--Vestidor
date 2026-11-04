@@ -1,3 +1,8 @@
+import 'dart:convert';
+import 'package:flutter/services.dart';
+import '../../core/database/database_helper.dart';
+import '../../core/services/offline_recovery_service.dart';
+import '../../services/api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/services/connectivity_service.dart';
@@ -13,6 +18,8 @@ class OfflineSyncScreen extends StatefulWidget {
 class _OfflineSyncScreenState extends State<OfflineSyncScreen> {
   List<Map<String, dynamic>> _operations = [];
   bool _isLoading = true;
+  OfflineRecoveryService? _recovery;
+  String? _loadedOwner;
 
   @override
   void initState() {
@@ -23,10 +30,12 @@ class _OfflineSyncScreenState extends State<OfflineSyncScreen> {
   Future<void> _loadOperations() async {
     setState(() => _isLoading = true);
     final syncService = context.read<OfflineSyncService>();
+    final owner = DatabaseHelper.scope;
     final list = await syncService.getAllOperations();
     if (mounted) {
       setState(() {
-        _operations = list;
+        _loadedOwner = owner;
+        _operations = owner == DatabaseHelper.scope ? list : [];
         _isLoading = false;
       });
     }
@@ -34,6 +43,7 @@ class _OfflineSyncScreenState extends State<OfflineSyncScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loadedOwner != DatabaseHelper.scope) { _operations=[]; }
     final connectivity = context.watch<ConnectivityService>();
     final syncService = context.watch<OfflineSyncService>();
 
@@ -41,6 +51,37 @@ class _OfflineSyncScreenState extends State<OfflineSyncScreen> {
       appBar: AppBar(
         title: const Text('Sincronización Offline'),
         actions: [
+          IconButton(icon:const Icon(Icons.replay),tooltip:'Reintentar un rechazo',onPressed:() async {
+            final sync=context.read<OfflineSyncService>();
+            final rows=await sync.getAllOperations();
+            final rejected=rows.where((r)=>r['operation_type']!='COMPRA_BILLETERA_OFFLINE' && ['CONFLICTO','RECHAZADA_POR_STOCK'].contains(r['local_status']) && r['server_entity_id']==null).toList();
+            if(!context.mounted) return;
+            final selected=await showDialog<Map<String,dynamic>>(context:context,builder:(ctx)=>SimpleDialog(
+              title:const Text('Crear otro intento verificando precios y stock'),
+              children:rejected.map((op)=>SimpleDialogOption(onPressed:()=>Navigator.pop(ctx,op),child:Text('${op['client_operation_id']}\n${op['error_detail'] ?? ''}'))).toList()));
+            if(selected==null) return;
+            try { await sync.retryRejected(selected); await _loadOperations(); }
+            catch(e) { if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('$e'))); }
+          }),
+          IconButton(icon:const Icon(Icons.copy),tooltip:'Exportar mis operaciones',onPressed:() async {
+            final owner=DatabaseHelper.scope;
+            final sync=context.read<OfflineSyncService>();
+            final rows=await sync.getAllOperations();
+            if(owner!=null && owner==DatabaseHelper.scope) await Clipboard.setData(ClipboardData(text:jsonEncode(rows)));
+          }),
+          IconButton(icon:const Icon(Icons.restore),tooltip:'Verificar cola antigua',onPressed:() async {
+            _recovery ??= OfflineRecoveryService(context.read<ApiService>());
+            try {
+              final report=await _recovery!.preview();
+              if(!context.mounted) return;
+              final approved=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+                title:const Text('Recuperación verificada'),
+                content:Text('${report['eligible']} verificadas para tu cuenta. ${report['quarantined']} requieren revisión y quedarán intactas.'),
+                actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancelar')),
+                  TextButton(onPressed:report['eligible']==0?null:()=>Navigator.pop(ctx,true),child:const Text('Importar verificadas'))]));
+              if(approved==true) { await _recovery!.importVerified(); await _loadOperations(); }
+            } catch(e) { if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('$e'))); }
+          }),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refrescar Lista',
@@ -134,7 +175,7 @@ class _OfflineSyncScreenState extends State<OfflineSyncScreen> {
                       onPressed: (!connectivity.isOnline || syncService.isSyncing || syncService.pendingCount == 0)
                           ? null
                           : () async {
-                              await syncService.syncBatchNow();
+                              await syncService.syncBatchNow(force:true);
                               await _loadOperations();
                             },
                     ),
@@ -235,7 +276,9 @@ class _OfflineSyncScreenState extends State<OfflineSyncScreen> {
                               child: Icon(statusIcon, color: statusColor, size: 20),
                             ),
                             title: Text(
-                              op['operation_type'] == 'VENTA_CONTADO_OFFLINE' ? 'Venta Contado' : 'Reserva',
+                              op['operation_type'] == 'VENTA_CONTADO_OFFLINE' ? 'Venta Contado' :
+                                op['operation_type'] == 'RESERVA_OFFLINE' ? 'Reserva' :
+                                op['operation_type'] == 'COMPRA_BILLETERA_OFFLINE' ? 'Compra con billetera' : 'Operación',
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                             ),
                             subtitle: Column(

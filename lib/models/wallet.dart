@@ -3,6 +3,8 @@ class UserWallet {
   final String userId;
   final double saldoActual;
   final double saldoRetenido;
+  final double saldoPendiente;
+  double get saldoDisponible => (saldoActual - saldoRetenido - saldoPendiente).clamp(0.0, double.infinity);
   final int nonceSecuencia;
   final String firmaBalance;
   final String moneda;
@@ -13,6 +15,7 @@ class UserWallet {
     required this.userId,
     required this.saldoActual,
     this.saldoRetenido = 0.0,
+    this.saldoPendiente = 0.0,
     required this.nonceSecuencia,
     required this.firmaBalance,
     this.moneda = 'BOB',

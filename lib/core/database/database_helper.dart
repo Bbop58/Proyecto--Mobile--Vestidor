@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
@@ -34,7 +35,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -70,6 +71,22 @@ class DatabaseHelper {
       } catch (_) {}
       await _createFavoriteTables(db);
     }
+    if (oldVersion < 5) {
+      final additions = {
+        'pending_operations': {'codigo_cupon': 'TEXT', 'fecha_hora_esperada': 'TEXT',
+          'supersedes_operation_id': 'TEXT', 'replacement_id': 'TEXT', 'synced_at': 'TEXT'},
+        'local_wallet': {'server_validated': 'INTEGER NOT NULL DEFAULT 0'}
+      };
+      for (final entry in additions.entries) {
+        final columns = await db.rawQuery('PRAGMA table_info(${entry.key})');
+        if (columns.isEmpty) continue;
+        for (final column in entry.value.entries) {
+          if (!columns.any((row) => row['name'] == column.key)) {
+            await db.execute('ALTER TABLE ${entry.key} ADD COLUMN ${column.key} ${column.value}');
+          }
+        }
+      }
+    }
   }
 
   Future<void> _createFavoriteTables(Database db) async {
@@ -90,6 +107,7 @@ class DatabaseHelper {
         user_id TEXT PRIMARY KEY,
         saldo REAL NOT NULL DEFAULT 0.0,
         saldo_retenido REAL NOT NULL DEFAULT 0.0,
+        server_validated INTEGER NOT NULL DEFAULT 0,
         nonce INTEGER NOT NULL DEFAULT 0,
         firma TEXT,
         moneda TEXT DEFAULT 'BOB',
@@ -170,6 +188,11 @@ class DatabaseHelper {
         monto_recibido REAL,
         cambio REAL,
         metodo_pago TEXT DEFAULT 'EFECTIVO',
+        codigo_cupon TEXT,
+        fecha_hora_esperada TEXT,
+        supersedes_operation_id TEXT,
+        replacement_id TEXT,
+        synced_at TEXT,
         notas TEXT,
         items_json TEXT NOT NULL,
         local_status TEXT NOT NULL, -- 'LOCAL_PENDIENTE', 'CONFIRMADA', 'RECHAZADA_POR_STOCK', 'CONFLICTO'
@@ -285,12 +308,22 @@ class DatabaseHelper {
       throw StateError("Inicia sesión para registrar operaciones");
     }
     final db = await database;
-    await db.insert(
-      'pending_operations',
-      op,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.transaction((transaction) async {
+      final existing = await transaction.query('pending_operations',where:'client_operation_id = ?',whereArgs:[op['client_operation_id']]);
+      if (existing.isNotEmpty) {
+        if (_operationContent(existing.first) != _operationContent(op)) { throw StateError('El UUID local ya contiene otra operación'); }
+      } else {
+        await transaction.insert('pending_operations',op,conflictAlgorithm:ConflictAlgorithm.abort);
+      }
+    });
   }
+
+  String _operationContent(Map<String,dynamic> row) => jsonEncode({for(final key in [
+    'client_operation_id','operation_type','sucursal_id','cajero_id','cliente_id','fecha_local','monto_total',
+    'monto_recibido','cambio','metodo_pago','codigo_cupon','fecha_hora_esperada','supersedes_operation_id','items_json'])
+      key: ['monto_total','monto_recibido','cambio'].contains(key) && row[key] is num
+        ? (row[key] as num).toDouble()
+        : key=='metodo_pago' ? row[key] ?? 'EFECTIVO' : row[key]});
 
   Future<List<Map<String, dynamic>>> getPendingOperations() async {
     final db = await database;
@@ -341,15 +374,14 @@ class DatabaseHelper {
     String moneda = 'BOB',
   }) async {
     final db = await database;
-    await db.insert('local_wallet', {
-      'user_id': userId,
-      'saldo': saldo,
-      'saldo_retenido': saldoRetenido,
-      'nonce': nonce,
-      'firma': firma,
-      'moneda': moneda,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.transaction((transaction) async {
+      final previous = await transaction.query('local_wallet',where:'user_id = ?',whereArgs:[userId]);
+      if (previous.isNotEmpty && previous.first['server_validated'] == 1 &&
+          (previous.first['nonce'] as num).toInt() > nonce) { return; }
+      await transaction.insert('local_wallet', {'user_id':userId,'saldo':saldo,'saldo_retenido':saldoRetenido,
+        'nonce':nonce,'firma':firma,'moneda':moneda,'server_validated':1,
+        'updated_at':DateTime.now().toUtc().toIso8601String()},conflictAlgorithm:ConflictAlgorithm.replace);
+    });
   }
 
   Future<Map<String, dynamic>?> getLocalWallet(String userId) async {
@@ -411,7 +443,7 @@ class DatabaseHelper {
     final db = await database;
     return await db.query(
       'local_wallet_transactions',
-      where: 'user_id = ?',
+      where: "user_id = ? AND tipo <> 'REGISTRO_LOCAL_CONCILIADO'",
       whereArgs: [userId],
       orderBy: 'fecha DESC',
     );
@@ -427,6 +459,13 @@ class DatabaseHelper {
       order,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  Future<List<Map<String,dynamic>>> getAllWalletOrders() async {
+    final owner=_fixedScope ?? scope;
+    if(owner==null) return [];
+    final db=await database;
+    return db.query('offline_wallet_orders',where:'cliente_id=?',whereArgs:[owner.split(':').last],orderBy:'created_at DESC');
   }
 
   Future<List<Map<String, dynamic>>> getPendingOfflineWalletOrders() async {
@@ -462,5 +501,127 @@ class DatabaseHelper {
       where: 'client_operation_id = ?',
       whereArgs: [clientOpId],
     );
+  }
+
+  static List<Map<String,dynamic>> verifiedResults(List<Map<String,dynamic>> pending, Map<String,dynamic> response, {bool wallet = false}) {
+    final raw = response['results'] ?? response['detalles'];
+    if (raw is! List || raw.length != pending.length) throw const FormatException('Respuesta incompleta; pendientes conservados');
+    final expected = {for(final op in pending) op['client_operation_id'].toString():op};
+    final seen = <String>{};
+    final results = <Map<String,dynamic>>[];
+    for (final value in raw) {
+      if (value is! Map) throw const FormatException('Respuesta inválida');
+      final result = Map<String,dynamic>.from(value);
+      final id = result['client_operation_id']?.toString();
+      final status = result['status'];
+      if (id == null || !expected.containsKey(id) || !seen.add(id) ||
+        !(wallet ? ['CONFIRMADA','CONFLICTO','COMPENSADA_POR_STOCK','RECHAZADA_POR_SOBREGIRO','REINTENTAR']
+          : ['CONFIRMADA','CONFLICTO','RECHAZADA_POR_STOCK','REINTENTAR']).contains(status) ||
+        (!wallet && result['operation_type'] != null && result['operation_type'] != expected[id]!['operation_type']) ||
+        (status == 'CONFIRMADA' && (result['receipt_number'] is! String || (result['receipt_number'] as String).isEmpty || result['server_entity_id'] == null))) {
+        throw const FormatException('Respuesta no verificable; pendientes conservados');
+      }
+      results.add(result);
+    }
+    return results;
+  }
+
+  Future<void> applySyncResults(List<Map<String,dynamic>> pending, Map<String,dynamic> response) async {
+    final results = verifiedResults(pending,response);
+    final db = await database;
+    await db.transaction((transaction) async {
+      for(final result in results) {
+        await transaction.update('pending_operations', {
+          'local_status':result['status']=='REINTENTAR'?'LOCAL_PENDIENTE':result['status'],
+          'server_receipt':result['receipt_number'],'server_entity_id':result['server_entity_id'],
+          'error_detail':result['error_detail'],'synced_at':response['processed_at']},
+          where:'client_operation_id = ? AND local_status = ?',whereArgs:[result['client_operation_id'],'LOCAL_PENDIENTE']);
+      }
+    });
+  }
+
+  Future<double> getPendingWalletTotal(String userId) async {
+    final db = await database;
+    final rows = await db.rawQuery("SELECT COALESCE(SUM(monto_total),0) AS total FROM offline_wallet_orders WHERE cliente_id=? AND status='PENDIENTE'",[userId]);
+    return (rows.first['total'] as num).toDouble();
+  }
+
+  Future<Map<String,dynamic>> recordWalletOrder(Map<String,dynamic> order) async {
+    final owner = _fixedScope ?? scope;
+    if (owner == null || owner.split(':').last != order['cliente_id']) throw StateError('La operación requiere su propietario');
+    final db = await database;
+    return db.transaction((transaction) async {
+      final walletRows = await transaction.query('local_wallet',where:'user_id = ?',whereArgs:[order['cliente_id']]);
+      if (walletRows.isEmpty || walletRows.first['server_validated'] != 1) throw StateError('Conéctate para validar la billetera antes de usarla');
+      final wallet = walletRows.first;
+      final previous = await transaction.query('offline_wallet_orders',where:'client_operation_id = ?',whereArgs:[order['client_operation_id']]);
+      final totals = await transaction.rawQuery("SELECT COALESCE(SUM(monto_total),0) AS total FROM offline_wallet_orders WHERE cliente_id=? AND status='PENDIENTE'",[order['cliente_id']]);
+      final pending = (totals.first['total'] as num).toDouble();
+      final amount = (order['monto_total'] as num).toDouble();
+      final balance = (wallet['saldo'] as num).toDouble();
+      final held = (wallet['saldo_retenido'] as num?)?.toDouble() ?? 0;
+      if (previous.isNotEmpty) {
+        for(final field in ['cliente_id','sucursal_id','monto_total','items_json','codigo_cupon']) {
+          if (previous.first[field] != order[field]) throw StateError('El UUID ya contiene otra orden');
+        }
+        return {...wallet,'pending_total':pending};
+      }
+      if (!amount.isFinite || amount <= 0 || (amount*100-(amount*100).round()).abs()>0.000001 ||
+          (amount*100).round() > (balance*100).round()-(held*100).round()-(pending*100).round()) {
+        throw StateError('Saldo disponible insuficiente o importe inválido');
+      }
+      await transaction.insert('offline_wallet_orders',order,conflictAlgorithm:ConflictAlgorithm.abort);
+      await transaction.insert('local_wallet_transactions',{
+        'id':'LOCAL-${order['client_operation_id']}','user_id':order['cliente_id'],'tipo':'PAGO_VENTA_OFFLINE_PENDIENTE',
+        'monto':-amount,'saldo_anterior':balance-pending,'saldo_posterior':balance-pending-amount,
+        'descripcion':'Compra pendiente de confirmación central','fecha':order['fecha_local']});
+      return {...wallet,'pending_total':pending+amount};
+    });
+  }
+
+  Future<void> applyWalletSyncResults(String userId,List<Map<String,dynamic>> pending,Map<String,dynamic> response) async {
+    final results = verifiedResults(pending,response,wallet:true);
+    final balance = response['nuevo_saldo'];final nonce = response['nuevo_nonce'];
+    final signature = response['nueva_firma'];final held = response['saldo_retenido'];
+    if (balance is! num || !balance.isFinite || balance < 0 || held is! num || !held.isFinite || held < 0 || held > balance ||
+      nonce is! int || nonce < 0 || signature is! String || signature.isEmpty) { throw const FormatException('Falta el saldo central confirmado'); }
+    final db = await database;
+    await db.transaction((transaction) async {
+      for(final result in results) {
+        await transaction.update('offline_wallet_orders',{'status':result['status']=='REINTENTAR'?'PENDIENTE':result['status'],
+          'server_receipt':result['receipt_number'],'error_detail':result['error_detail']},
+          where:'client_operation_id=? AND status=?',whereArgs:[result['client_operation_id'],'PENDIENTE']);
+        if(result['status'] != 'REINTENTAR') {
+          await transaction.update('local_wallet_transactions',{'tipo':'REGISTRO_LOCAL_CONCILIADO'},
+            where:'id=?',whereArgs:['LOCAL-${result['client_operation_id']}']);
+        }
+      }
+      final existing = await transaction.query('local_wallet',where:'user_id=?',whereArgs:[userId]);
+      if (existing.isEmpty || existing.first['server_validated'] != 1 || (existing.first['nonce'] as num).toInt() <= nonce) {
+        await transaction.insert('local_wallet',{'user_id':userId,'saldo':balance,'saldo_retenido':held,
+          'nonce':nonce,'firma':signature,'moneda':'BOB','server_validated':1,'updated_at':DateTime.now().toUtc().toIso8601String()},
+          conflictAlgorithm:ConflictAlgorithm.replace);
+      }
+    });
+  }
+
+  Future<void> invalidateWallet(String userId) async {
+    final db=await database;
+    await db.update('local_wallet',{'server_validated':0},where:'user_id=?',whereArgs:[userId]);
+  }
+
+  Future<String> replaceRejectedOperation(String id,Map<String,dynamic> replacement) async {
+    final db = await database;
+    return db.transaction((transaction) async {
+      final rows = await transaction.query('pending_operations',where:'client_operation_id=?',whereArgs:[id]);
+      if(rows.isEmpty) throw StateError('Operación no encontrada');
+      final previous = rows.first;
+      if(previous['replacement_id'] != null) return previous['replacement_id'].toString();
+      if(previous['server_entity_id'] != null || !['CONFLICTO','RECHAZADA_POR_STOCK'].contains(previous['local_status'])) throw StateError('Revisa el efecto original antes de crear otro');
+      final next = {...replacement,'supersedes_operation_id':id,'local_status':'LOCAL_PENDIENTE'};
+      await transaction.insert('pending_operations',next,conflictAlgorithm:ConflictAlgorithm.abort);
+      await transaction.update('pending_operations',{'local_status':'REEMPLAZADA','replacement_id':next['client_operation_id']},where:'client_operation_id=?',whereArgs:[id]);
+      return next['client_operation_id'].toString();
+    });
   }
 }
