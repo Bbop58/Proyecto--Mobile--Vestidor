@@ -86,34 +86,12 @@ class _CartScreenState extends State<CartScreen> {
       }
     } catch (_) {}
 
-    // Respaldo para modo Offline: cupones predeterminados
-    if (code == 'PROMO10' || code == 'FICC2026') {
-      final pct = code == 'FICC2026' ? 0.15 : 0.10;
-      final desc = cart.subtotal * pct;
-      setState(() {
-        _appliedCouponCode = code;
-        _couponDiscount = desc;
-        _isValidatingCoupon = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Cupón $code validado localmente (Modo offline)'),
-            backgroundColor: AppTheme.successColor,
-          ),
-        );
-      }
-    } else {
-      setState(() => _isValidatingCoupon = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cupón no válido o no aplicable.'),
-            backgroundColor: AppTheme.errorColor,
-          ),
-        );
-      }
-    }
+    if (!mounted) return;
+    setState(() => _isValidatingCoupon = false);
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Conéctate para validar el cupón; no se aplicó ningún descuento.'),
+      backgroundColor: AppTheme.errorColor,
+    ));
   }
 
   @override
@@ -620,8 +598,12 @@ class _CartScreenState extends State<CartScreen> {
         sucursalId: cart.selectedBranch!.id,
         items: items,
         totalAmount: total,
+        codigoCupon: _appliedCouponCode,
       );
 
+      if (result['success'] != true) {
+        throw Exception(result['error'] ?? 'La compra no fue confirmada');
+      }
       final clientOpId = result['client_operation_id']?.toString() ?? 'OP-WALLET';
       final isOfflineQueued = result['offline_queued'] == true;
 
@@ -749,6 +731,9 @@ class _CartScreenState extends State<CartScreen> {
       // 1. Crear la orden en PayPal Sandbox
       final orderRes = await paypalService.createOrder(
         montoBob: _getFinalTotal(cart.total),
+        detalles: cart.items.map((item) => {'variante_id': item.variant.id,
+          'cantidad': item.quantity, 'precio_unitario': item.unitPrice}).toList(),
+        codigoCupon: _appliedCouponCode,
         sucursalId: cart.selectedBranch!.id,
         descripcion: 'Compra directa en App Móvil FICCT STORE',
         items: items,

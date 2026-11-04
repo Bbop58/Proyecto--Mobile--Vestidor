@@ -58,4 +58,30 @@ void main() {
       );
     },
   );
+
+  test('wallet v3 upgrade preserves pending orders and adds coupon and held balance', () async {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    final directory = await Directory.systemTemp.createTemp('fashionstore_phase3_upgrade_');
+    await databaseFactory.setDatabasesPath(directory.path);
+    final old = await openDatabase('${directory.path}/fashion_store_v2_phase3_user.db', version: 3,
+      onCreate: (db, version) async {
+        await db.execute('CREATE TABLE local_wallet (user_id TEXT PRIMARY KEY, saldo REAL, nonce INTEGER, firma TEXT, moneda TEXT, updated_at TEXT)');
+        await db.execute('CREATE TABLE offline_wallet_orders (client_operation_id TEXT PRIMARY KEY, cliente_id TEXT, sucursal_id TEXT, monto_total REAL, nonce_usado INTEGER, firma_usada TEXT, items_json TEXT, fecha_local TEXT, status TEXT, server_receipt TEXT, error_detail TEXT, created_at TEXT)');
+        await db.insert('local_wallet', {'user_id': 'user', 'saldo': 20, 'nonce': 1, 'firma': 'sealed'});
+        await db.insert('offline_wallet_orders', {'client_operation_id': 'legacy', 'status': 'PENDIENTE'});
+      });
+    await old.close();
+    final scoped = DatabaseHelper.instance.forScope('phase3:user');
+    final wallet = await scoped.getLocalWallet('user');
+    expect(wallet?['saldo'], 20);
+    expect(wallet?['saldo_retenido'], 0);
+    expect((await scoped.getOfflineWalletOrder('legacy'))?['status'], 'PENDIENTE');
+    await scoped.saveLocalWallet(userId: 'user', saldo: 20, saldoRetenido: 5, nonce: 1, firma: 'sealed');
+    expect((await scoped.getLocalWallet('user'))?['saldo_retenido'], 5);
+    await scoped.insertOfflineWalletOrder({'client_operation_id': 'coupon-order', 'codigo_cupon': 'REAL',
+      'status': 'PENDIENTE', 'sucursal_id': 'branch', 'monto_total': 10, 'items_json': '[]',
+      'fecha_local': '2026-11-03', 'created_at': '2026-11-03'});
+    expect((await scoped.getOfflineWalletOrder('coupon-order'))?['codigo_cupon'], 'REAL');
+  });
 }

@@ -23,6 +23,8 @@ class PayPalService {
   /// Crear una orden de pago en PayPal a través del backend
   Future<Map<String, dynamic>?> createOrder({
     required double montoBob,
+    required List<Map<String, dynamic>> detalles,
+    String? codigoCupon,
     String? sucursalId,
     String? reservaId,
     String? descripcion,
@@ -31,6 +33,8 @@ class PayPalService {
     _errorMessage = null;
     final payload = {
       'monto_bob': montoBob,
+      'detalles': detalles,
+      if (codigoCupon != null) 'codigo_cupon': codigoCupon,
       if (sucursalId != null) 'sucursal_id': sucursalId,
       if (reservaId != null) 'reserva_id': reservaId,
       'descripcion': descripcion ?? 'Compra en FICCT STORE',

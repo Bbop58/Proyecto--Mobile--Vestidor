@@ -25,7 +25,7 @@ class WalletService extends ChangeNotifier {
 
   UserWallet? get wallet =>
       _wallet?.userId == DatabaseHelper.scope?.split(':').last ? _wallet : null;
-  double get saldo => wallet?.saldoActual ?? 0.0;
+  double get saldo => wallet == null ? 0.0 : wallet!.saldoActual - wallet!.saldoRetenido;
   List<WalletTxItem> get transactions => wallet == null ? [] : _transactions;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
@@ -73,12 +73,20 @@ class WalletService extends ChangeNotifier {
           await _db.saveLocalWallet(
             userId: _wallet!.userId.isNotEmpty ? _wallet!.userId : userId,
             saldo: _wallet!.saldoActual,
+            saldoRetenido: _wallet!.saldoRetenido,
             nonce: _wallet!.nonceSecuencia,
             firma: _wallet!.firmaBalance,
             moneda: _wallet!.moneda,
           );
 
           await fetchHistory();
+          _isLoading = false;
+          notifyListeners();
+          return;
+        }
+        if (res.statusCode == 409 || res.statusCode == 403 || res.statusCode == 401) {
+          _wallet = null;
+          _errorMessage = res.error;
           _isLoading = false;
           notifyListeners();
           return;
@@ -96,7 +104,7 @@ class WalletService extends ChangeNotifier {
           id: 'local_${localData['user_id']}',
           userId: localData['user_id'].toString(),
           saldoActual: (localData['saldo'] as num).toDouble(),
-          saldoRetenido: 0.0,
+          saldoRetenido: (localData['saldo_retenido'] as num?)?.toDouble() ?? 0.0,
           nonceSecuencia: (localData['nonce'] as num).toInt(),
           firmaBalance: localData['firma']?.toString() ?? '',
           moneda: localData['moneda']?.toString() ?? 'BOB',
@@ -214,6 +222,7 @@ class WalletService extends ChangeNotifier {
         await _db.saveLocalWallet(
           userId: userId,
           saldo: _wallet!.saldoActual,
+          saldoRetenido: _wallet!.saldoRetenido,
           nonce: _wallet!.nonceSecuencia,
           firma: _wallet!.firmaBalance,
           moneda: _wallet!.moneda,
@@ -239,6 +248,7 @@ class WalletService extends ChangeNotifier {
     required String sucursalId,
     required List<Map<String, dynamic>> items,
     required double totalAmount,
+    String? codigoCupon,
   }) async {
     final scope = DatabaseHelper.scope;
     final currentWallet = wallet;
@@ -249,7 +259,7 @@ class WalletService extends ChangeNotifier {
     final userId = scope.split(':').last;
 
     // 1. Verificación de saldo local garantizado
-    if (wallet == null || currentWallet.saldoActual < totalAmount) {
+    if (wallet == null || currentWallet.saldoActual-currentWallet.saldoRetenido < totalAmount) {
       final current = wallet?.saldoActual ?? 0.0;
       throw Exception(
         'Saldo insuficiente en tu Billetera Virtual.\nSaldo disponible: Bs. ${current.toStringAsFixed(2)}\nTotal a pagar: Bs. ${totalAmount.toStringAsFixed(2)}',
@@ -288,6 +298,7 @@ class WalletService extends ChangeNotifier {
       'cliente_id': userId,
       'sucursal_id': sucursalId,
       'monto_total': totalAmount,
+      'codigo_cupon': codigoCupon,
       'nonce_usado': currentWallet.nonceSecuencia,
       'firma_usada': currentWallet.firmaBalance,
       'items_json': jsonEncode(items),
@@ -319,17 +330,25 @@ class WalletService extends ChangeNotifier {
     _transactions.insert(0, WalletTxItem.fromJson(txLocal));
     notifyListeners();
 
-    // 4. Si hay red, sincronizar de inmediato
+    // A local debit is provisional until this exact operation has a server receipt.
     if (_connectivity.isOnline) {
-      syncOfflineWalletOrders();
+      await syncOfflineWalletOrders();
+      if (scope != DatabaseHelper.scope) {
+        return {'success': false, 'error': 'La sesión cambió durante el pago'};
+      }
+      final result = await db.getOfflineWalletOrder(clientOpId);
+      final status = result?['status']?.toString();
+      if (status == 'CONFIRMADA') {
+        return {'success': true, 'client_operation_id': clientOpId,
+          'offline_queued': false, 'server_receipt': result?['server_receipt']};
+      }
+      if (status != null && status != 'PENDIENTE') {
+        return {'success': false, 'client_operation_id': clientOpId,
+          'error': result?['error_detail'] ?? 'El servidor rechazó la compra'};
+      }
     }
-
-    return {
-      'success': true,
-      'client_operation_id': clientOpId,
-      'nuevo_saldo': nuevoSaldo,
-      'offline_queued': !_connectivity.isOnline,
-    };
+    return {'success': true, 'client_operation_id': clientOpId,
+      'nuevo_saldo': nuevoSaldo, 'offline_queued': true};
   }
 
   /// Sincroniza la cola de órdenes de billetera contra el servidor central
@@ -350,6 +369,7 @@ class WalletService extends ChangeNotifier {
           'client_operation_id': row['client_operation_id'],
           'sucursal_id': row['sucursal_id'],
           'monto_total': row['monto_total'],
+          'codigo_cupon': row['codigo_cupon'],
           'items': items
               .map(
                 (i) => {
@@ -396,7 +416,7 @@ class WalletService extends ChangeNotifier {
         }
 
         final successOrders = results
-            .where((r) => r['status'] == 'CONFIRMED' || r['status'] == 'OK')
+            .where((r) => r['status'] == 'CONFIRMADA' || r['status'] == 'CONFIRMED' || r['status'] == 'OK')
             .toList();
         if (successOrders.isNotEmpty) {
           final receipts = successOrders

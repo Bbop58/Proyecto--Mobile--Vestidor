@@ -34,13 +34,26 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
   }
 
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 4) {
+      // Check columns because version-1 upgrades create the current wallet tables.
+      for (final entry in {'local_wallet': {'saldo_retenido': 'REAL NOT NULL DEFAULT 0.0'},
+        'offline_wallet_orders': {'codigo_cupon': 'TEXT'}}.entries) {
+        final columns = await db.rawQuery('PRAGMA table_info(${entry.key})');
+        if (columns.isEmpty) continue;
+        for (final column in entry.value.entries) {
+          if (!columns.any((row) => row['name'] == column.key)) {
+            await db.execute('ALTER TABLE ${entry.key} ADD COLUMN ${column.key} ${column.value}');
+          }
+        }
+      }
+    }
     if (oldVersion < 2) {
       await _createWalletTables(db);
     }
@@ -76,6 +89,7 @@ class DatabaseHelper {
       CREATE TABLE IF NOT EXISTS local_wallet (
         user_id TEXT PRIMARY KEY,
         saldo REAL NOT NULL DEFAULT 0.0,
+        saldo_retenido REAL NOT NULL DEFAULT 0.0,
         nonce INTEGER NOT NULL DEFAULT 0,
         firma TEXT,
         moneda TEXT DEFAULT 'BOB',
@@ -104,6 +118,7 @@ class DatabaseHelper {
         cliente_id TEXT,
         sucursal_id TEXT NOT NULL,
         monto_total REAL NOT NULL,
+        codigo_cupon TEXT,
         nonce_usado INTEGER,
         firma_usada TEXT,
         items_json TEXT NOT NULL,
@@ -320,6 +335,7 @@ class DatabaseHelper {
   Future<void> saveLocalWallet({
     required String userId,
     required double saldo,
+    double saldoRetenido = 0,
     required int nonce,
     required String firma,
     String moneda = 'BOB',
@@ -328,6 +344,7 @@ class DatabaseHelper {
     await db.insert('local_wallet', {
       'user_id': userId,
       'saldo': saldo,
+      'saldo_retenido': saldoRetenido,
       'nonce': nonce,
       'firma': firma,
       'moneda': moneda,
@@ -420,6 +437,12 @@ class DatabaseHelper {
       whereArgs: ['PENDIENTE'],
       orderBy: 'created_at ASC',
     );
+  }
+
+  Future<Map<String, dynamic>?> getOfflineWalletOrder(String id) async {
+    final db = await database;
+    final rows = await db.query('offline_wallet_orders', where: 'client_operation_id = ?', whereArgs: [id], limit: 1);
+    return rows.isEmpty ? null : rows.first;
   }
 
   Future<void> updateOfflineWalletOrderStatus(
