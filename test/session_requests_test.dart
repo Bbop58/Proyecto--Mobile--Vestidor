@@ -70,4 +70,20 @@ void main() {
     response.complete(http.Response('{"saldo":100}', 200));
     expect((await pending).statusCode, 401);
   });
+  for(final method in ['GET','PUT','PATCH','DELETE']) {
+    test('$method is not sent with the next account token',() async {
+      final storage=TokenStorage();final token=Completer<String?>();storage.token=token.future;
+      DatabaseHelper.activateScope('a:user');var calls=0;
+      final api=ApiService(storage,client:MockClient((request) async { calls++;return http.Response('{}',200); }));
+      final pending=switch(method) {
+        'GET'=>api.getAuth('https://example.invalid/me'),
+        'PUT'=>api.putAuth('https://example.invalid/me',{}),
+        'PATCH'=>api.patchAuth('https://example.invalid/reservation'),
+        _=>api.deleteAuth('https://example.invalid/favorite'),
+      };
+      DatabaseHelper.activateScope('b:user');token.complete('token-b');
+      expect((await pending).statusCode,401);expect(calls,0);api.dispose();
+    });
+  }
+
 }

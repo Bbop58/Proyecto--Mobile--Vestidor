@@ -15,6 +15,7 @@ class CategoryService {
           .where((cat) => cat.activo)
           .toList();
     }
-    return [];
+    if(!response.success) throw Exception(response.error ?? 'No se pudo cargar la lista');
+    throw const FormatException('Respuesta inválida');
   }
 }

@@ -71,6 +71,7 @@ class InventoryService {
       return bySucursal.values.toList()
         ..sort((a, b) => b.stockDisponible.compareTo(a.stockDisponible));
     }
-    return [];
+    if(!response.success) { throw Exception(response.error ?? 'No se pudo cargar la información. Intenta nuevamente.'); }
+    throw const FormatException('La respuesta no contiene una lista válida');
   }
 }

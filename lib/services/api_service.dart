@@ -174,6 +174,7 @@ class ApiService {
     try {
       final scope = DatabaseHelper.scope;
       final headers = await _authHeaders();
+      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
       final response = await _client
           .get(Uri.parse(url), headers: headers)
           .timeout(ApiConfig.connectionTimeout);
@@ -203,10 +204,13 @@ class ApiService {
   /// PUT request (con auth)
   Future<ApiResponse> putAuth(String url, Map<String, dynamic> body) async {
     try {
+      final scope = DatabaseHelper.scope;
       final headers = await _authHeaders();
+      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
       final response = await _client
           .put(Uri.parse(url), headers: headers, body: jsonEncode(body))
           .timeout(ApiConfig.connectionTimeout);
+      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
       return _handleResponse(response);
     } on SocketException {
       return ApiResponse(
@@ -226,10 +230,13 @@ class ApiService {
   /// DELETE request (con auth)
   Future<ApiResponse> deleteAuth(String url) async {
     try {
+      final scope = DatabaseHelper.scope;
       final headers = await _authHeaders();
+      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
       final response = await _client
           .delete(Uri.parse(url), headers: headers)
           .timeout(ApiConfig.connectionTimeout);
+      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
       return _handleResponse(response);
     } on SocketException {
       return ApiResponse(
@@ -252,7 +259,9 @@ class ApiService {
     Map<String, dynamic>? body,
   ]) async {
     try {
+      final scope = DatabaseHelper.scope;
       final headers = await _authHeaders();
+      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
       final response = await _client
           .patch(
             Uri.parse(url),
@@ -260,6 +269,7 @@ class ApiService {
             body: body != null ? jsonEncode(body) : null,
           )
           .timeout(ApiConfig.connectionTimeout);
+      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
       return _handleResponse(response);
     } on SocketException {
       return ApiResponse(

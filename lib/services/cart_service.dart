@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
+import '../core/database/database_helper.dart';
 import '../models/branch.dart';
 import '../models/cart_item.dart';
 import '../models/product.dart';
 import '../models/product_variant.dart';
 
 class CartService extends ChangeNotifier {
+  CartService() { DatabaseHelper.scopeChanges.addListener(clearCart); }
+  int _revision = 0;
+  int get revision => _revision;
+  @override
+  void dispose() { DatabaseHelper.scopeChanges.removeListener(clearCart); super.dispose(); }
   final List<CartItem> _items = [];
   Branch? _selectedBranch;
 
@@ -21,10 +27,14 @@ class CartService extends ChangeNotifier {
 
   void setSelectedBranch(Branch? branch) {
     _selectedBranch = branch;
+    _revision++;
     notifyListeners();
   }
 
   void addItem(Product product, ProductVariant variant, {int quantity = 1}) {
+    if(quantity<=0 || variant.productoId!=product.id || !product.activo || !variant.activo) {
+      throw ArgumentError('Selecciona una variante activa del producto y una cantidad positiva');
+    }
     final existingIndex = _items.indexWhere(
       (item) => item.variant.id == variant.id,
     );
@@ -38,6 +48,7 @@ class CartService extends ChangeNotifier {
         quantity: quantity,
       ));
     }
+    _revision++;
     notifyListeners();
   }
 
@@ -49,18 +60,21 @@ class CartService extends ChangeNotifier {
       } else {
         _items[index].quantity = quantity;
       }
-      notifyListeners();
+      _revision++;
+    notifyListeners();
     }
   }
 
   void removeItem(String variantId) {
     _items.removeWhere((item) => item.variant.id == variantId);
+    _revision++;
     notifyListeners();
   }
 
   void clearCart() {
     _items.clear();
     _selectedBranch = null;
+    _revision++;
     notifyListeners();
   }
 }

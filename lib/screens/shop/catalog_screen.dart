@@ -34,6 +34,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   List<Product> _products = [];
   String? _selectedCategoryId;
   String? _selectedSeasonId;
+  int _generation=0;
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -50,6 +51,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Future<void> _loadData() async {
+    final owner=DatabaseHelper.scope;
+    if(owner==null) return;
+    final generation=++_generation;
+    final db=DatabaseHelper.instance.forScope(owner);
+    bool current()=>mounted && owner==DatabaseHelper.scope && generation==_generation;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -62,7 +68,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     final notifService = context.read<NotificationService>();
 
     if (!connectivity.isOnline) {
-      final loadedOffline = await _loadFromSqliteCache();
+      final loadedOffline = await _loadFromSqliteCache(owner,generation);
       if (loadedOffline) return;
     }
 
@@ -70,7 +76,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
       notifService.fetchUnreadCount();
 
       final categories = await catService.getCategories();
+      if(!current()) return;
       final seasons = await seasonService.getSeasons();
+      if(!current()) return;
 
       // Obtener el nombre de temporada seleccionada para el filtro
       String? selectedSeasonName;
@@ -87,19 +95,18 @@ class _CatalogScreenState extends State<CatalogScreen> {
             : null,
       );
 
-      // Si no trajo productos y no hay filtros activos, intentar respaldo offline
-      if (products.isEmpty && _selectedCategoryId == null && _selectedSeasonId == null && _searchController.text.trim().isEmpty) {
-        final loadedOffline = await _loadFromSqliteCache();
-        if (loadedOffline) return;
-      }
+      if(!current()) return;
+      final fullCatalog=_selectedCategoryId==null && _selectedSeasonId==null && _searchController.text.trim().isEmpty;
 
       // Cachear en SQLite local solo cuando hay productos válidos
-      if (products.isNotEmpty) {
+      if (fullCatalog) {
         try {
-          await DatabaseHelper.instance.cacheProducts(products.map((p) => {
+          await db.cacheProducts(products.map((p) => {
             'id': p.id,
             'nombre': p.nombre,
             'categoria': p.categoriaNombre ?? '',
+            'categoria_id':p.categoriaId,
+            'temporada':p.temporada,
             'precio_base': p.precioBase,
             'precio_oferta': p.precioOferta,
             'en_oferta': p.enOferta ? 1 : 0,
@@ -113,13 +120,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
               'precio_extra': v.precioAdicional,
               'imagen_url': v.imagenUrl,
             }).toList()),
-          }).toList());
+          }).toList(),replace:true);
         } catch (e) {
           debugPrint('Error al guardar caché en SQLite: $e');
         }
       }
 
-      if (mounted) {
+      if (current()) {
         setState(() {
           _categories = categories;
           _seasons = seasons;
@@ -128,8 +135,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
         });
       }
     } catch (e) {
+      if(!current()) return;
       // Fallback: cargar catálogo desde la base de datos local SQLite
-      final loadedOffline = await _loadFromSqliteCache();
+      final loadedOffline = await _loadFromSqliteCache(owner,generation);
       if (!loadedOffline && mounted) {
         setState(() {
           _errorMessage = 'Modo offline: No hay productos en la caché local para mostrar.';
@@ -140,9 +148,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   /// Carga de emergencia o contingencia offline desde SQLite local
-  Future<bool> _loadFromSqliteCache() async {
+  Future<bool> _loadFromSqliteCache(String owner,int generation) async {
+    if(owner!=DatabaseHelper.scope || generation!=_generation) return false;
     try {
-      final cached = await DatabaseHelper.instance.getCachedProducts();
+      final cached = await DatabaseHelper.instance.forScope(owner).getCachedProducts();
+      if(!mounted || owner!=DatabaseHelper.scope || generation!=_generation) return false;
       if (cached.isNotEmpty) {
         final fallbackProducts = cached.map((c) {
           List<ProductVariant> vars = [];
@@ -168,6 +178,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
             precioOferta: (c['precio_oferta'] as num?)?.toDouble(),
             enOferta: (c['en_oferta'] == 1 || c['en_oferta'] == true),
             categoriaNombre: c['categoria'] as String?,
+            categoriaId:c['categoria_id'] as String?,
+            temporada:c['temporada'] as String?,
             imagenUrl: c['imagen_url'] as String?,
             activo: true,
             variantes: vars,
@@ -176,12 +188,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
         // Aplicar filtro de búsqueda si el usuario ingresó texto
         final query = _searchController.text.trim().toLowerCase();
-        final filtered = query.isEmpty
-            ? fallbackProducts
-            : fallbackProducts.where((p) =>
-                p.nombre.toLowerCase().contains(query) ||
-                (p.categoriaNombre?.toLowerCase().contains(query) ?? false)
-              ).toList();
+        final selectedSeasons=_seasons.where((s)=>s.id==_selectedSeasonId).toList();
+        final filtered=fallbackProducts.where((p)=>
+          (_selectedCategoryId==null || p.categoriaId==_selectedCategoryId) &&
+          (_selectedSeasonId==null || (selectedSeasons.isNotEmpty && p.temporada==selectedSeasons.first.nombre)) &&
+          (query.isEmpty || p.nombre.toLowerCase().contains(query) || (p.categoriaNombre?.toLowerCase().contains(query) ?? false))).toList();
 
         if (mounted) {
           setState(() {

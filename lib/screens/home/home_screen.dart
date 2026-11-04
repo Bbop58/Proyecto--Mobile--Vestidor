@@ -369,9 +369,9 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                           border: Border(
                             left: BorderSide(color: accent, width: 4),
-                            top: BorderSide(color: border),
-                            right: BorderSide(color: border),
-                            bottom: BorderSide(color: border),
+                            top: BorderSide(color: accent),
+                            right: BorderSide(color: accent),
+                            bottom: BorderSide(color: accent),
                           ),
                           boxShadow: [
                             BoxShadow(
@@ -644,7 +644,7 @@ class _HomeScreenState extends State<HomeScreen>
                               icon: Icons.security_outlined,
                               label: 'Seguridad y Permisos',
                               subtitle: 'Sesión activa mediante JWT Seguro',
-                              onTap: () {},
+                              onTap: null,
                             ),
                             Divider(height: 1, indent: 56, color: border),
                             _buildActionTile(
@@ -720,7 +720,7 @@ class _HomeScreenState extends State<HomeScreen>
     required IconData icon,
     required String label,
     required String subtitle,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
     Color? color,
   }) {
     final accent = AppTheme.getAccent(context);
@@ -728,7 +728,9 @@ class _HomeScreenState extends State<HomeScreen>
     final textSecondary = AppTheme.getTextSecondary(context);
     final textMuted = AppTheme.getTextMuted(context);
 
-    return ListTile(
+    return Material(
+      type: MaterialType.transparency,
+      child: ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       leading: Container(
         width: 36,
@@ -754,12 +756,13 @@ class _HomeScreenState extends State<HomeScreen>
           color: textSecondary,
         ),
       ),
-      trailing: Icon(
+      trailing: onTap == null ? null : Icon(
         Icons.chevron_right_rounded,
         color: textMuted,
         size: 20,
       ),
       onTap: onTap,
+      ),
     );
   }
 

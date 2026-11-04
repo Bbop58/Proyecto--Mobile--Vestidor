@@ -6,27 +6,33 @@ class LocalNotificationService {
       FlutterLocalNotificationsPlugin();
 
   static bool _isInitialized = false;
+  static Future<void>? _initializing;
 
   /// Inicializa el plugin de notificaciones locales para Android, iOS y Web/Desktop
-  static Future<void> initialize() async {
-    if (_isInitialized) return;
+  static Future<void> initialize() {
+    if (_isInitialized) return Future<void>.value();
+    return _initializing ??= _initializePlugin().whenComplete(() {
+      _initializing = null;
+    });
+  }
 
+  static Future<void> _initializePlugin() async {
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
 
     const DarwinInitializationSettings initializationSettingsDarwin =
         DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
 
     const InitializationSettings initializationSettings =
         InitializationSettings(
-      android: initializationSettingsAndroid,
-      iOS: initializationSettingsDarwin,
-      macOS: initializationSettingsDarwin,
-    );
+          android: initializationSettingsAndroid,
+          iOS: initializationSettingsDarwin,
+          macOS: initializationSettingsDarwin,
+        );
 
     await _notificationsPlugin.initialize(
       settings: initializationSettings,
@@ -39,7 +45,8 @@ class LocalNotificationService {
     try {
       final androidImplementation = _notificationsPlugin
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
+            AndroidFlutterLocalNotificationsPlugin
+          >();
       if (androidImplementation != null) {
         await androidImplementation.requestNotificationsPermission();
       }
@@ -64,16 +71,15 @@ class LocalNotificationService {
 
       const AndroidNotificationDetails androidDetails =
           AndroidNotificationDetails(
-        'ficct_store_channel',
-        'Notificaciones FICCT STORE',
-        channelDescription:
-            'Canal oficial para avisos de compras, reservas y novedades de catálogo',
-        importance: Importance.max,
-        priority: Priority.high,
-        showWhen: true,
-        playSound: true,
-        enableVibration: true,
-      );
+            'ficct_store_channel',
+            'Notificaciones FICCT STORE',
+            channelDescription: 'Canal oficial para avisos de compras, reservas y novedades de catálogo',
+            importance: Importance.max,
+            priority: Priority.high,
+            showWhen: true,
+            playSound: true,
+            enableVibration: true,
+          );
 
       const DarwinNotificationDetails darwinDetails = DarwinNotificationDetails(
         presentAlert: true,

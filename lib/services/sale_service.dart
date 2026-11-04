@@ -95,7 +95,8 @@ class SaleService {
           .map((json) => Sale.fromJson(json as Map<String, dynamic>))
           .toList();
     }
-    return [];
+    if(!response.success) { throw Exception(response.error ?? 'No se pudo cargar la información. Intenta nuevamente.'); }
+    throw const FormatException('La respuesta no contiene una lista válida');
   }
 
   /// Registrar una venta digital (compra directa desde la app)

@@ -34,6 +34,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   // Disponibilidad por sucursal
   List<InventoryAvailability> _availability = [];
   bool _loadingAvailability = false;
+  String? _availabilityError;
   String? _lastVarianteId;
 
   @override
@@ -43,6 +44,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _loadProduct() async {
+    final owner=DatabaseHelper.scope;
+    if(owner==null) return;
+    final db=DatabaseHelper.instance.forScope(owner);
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -54,10 +58,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       prod = await service.getProductById(widget.productId);
     } catch (_) {}
 
+    if(!mounted || owner!=DatabaseHelper.scope) return;
     if (prod == null) {
       // Fallback: cargar producto desde la base de datos local SQLite
       try {
-        final cached = await DatabaseHelper.instance.getCachedProducts();
+        final cached = await db.getCachedProducts();
         final match = cached.where((c) => c['id'] == widget.productId);
         if (match.isNotEmpty) {
           final c = match.first;
@@ -116,11 +121,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   Future<void> _loadAvailability() async {
     if (_product == null) return;
+    final owner=DatabaseHelper.scope;
     // Use a cache key based on product + talla + color
     final cacheKey = '${_product!.id}:$_selectedSize:$_selectedColor';
     if (cacheKey == _lastVarianteId) return;
     setState(() {
       _loadingAvailability = true;
+      _availabilityError = null;
+      _availability = [];
       _lastVarianteId = cacheKey;
     });
     try {
@@ -130,14 +138,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         talla: _selectedSize,
         color: _selectedColor,
       );
-      if (mounted) {
+      if (mounted && owner==DatabaseHelper.scope && cacheKey==_lastVarianteId) {
         setState(() {
           _availability = list;
           _loadingAvailability = false;
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _loadingAvailability = false);
+      if (mounted && owner==DatabaseHelper.scope && cacheKey==_lastVarianteId) {
+        setState(() {
+          _loadingAvailability = false;
+          _lastVarianteId = null;
+          _availabilityError = 'No se pudo verificar el stock. Reintenta.';
+        });
+      }
     }
   }
 
@@ -938,7 +952,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           ],
         ),
         const SizedBox(height: 10),
-        if (!_loadingAvailability && _availability.isEmpty)
+          if (_availabilityError != null)
+            TextButton(onPressed: _loadAvailability, child: Text(_availabilityError!))
+          else if (!_loadingAvailability && _availability.isEmpty)
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(

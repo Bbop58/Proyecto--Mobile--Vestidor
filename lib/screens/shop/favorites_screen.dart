@@ -39,6 +39,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     return Scaffold(
       backgroundColor: bg,
       appBar: AppBar(
+        bottom: favService.errorMessage==null?null:PreferredSize(preferredSize:const Size.fromHeight(52),
+          child:Padding(padding:const EdgeInsets.all(8),child:Text(favService.errorMessage!,maxLines:2))),
         title: const Text('Mis Favoritos', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         backgroundColor: cardBg,
         elevation: 0,

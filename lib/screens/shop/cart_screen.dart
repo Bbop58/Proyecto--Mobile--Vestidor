@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
@@ -28,23 +29,50 @@ class _CartScreenState extends State<CartScreen> {
   List<Branch> _branches = [];
   bool _isLoadingBranches = true;
   bool _isSubmitting = false;
+  bool _checkoutRunning = false;
+  int? _couponRevision;
 
   final TextEditingController _couponController = TextEditingController();
   String? _appliedCouponCode;
   double _couponDiscount = 0.0;
   bool _isValidatingCoupon = false;
 
+  void _invalidateStaleCoupon() {
+    if(_appliedCouponCode!=null && _couponRevision!=context.read<CartService>().revision) {
+      _appliedCouponCode=null;_couponDiscount=0;_couponRevision=null;
+    }
+  }
+
+  Future<void> _runCheckout(Future<void> Function() action) async {
+    if(_checkoutRunning) return;
+    _checkoutRunning=true;
+    _invalidateStaleCoupon();
+    try { await action(); }
+    catch(e) {
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('No se completó la operación: $e')));
+    } finally {
+      _checkoutRunning=false;
+      if(mounted) setState(()=>_isSubmitting=false);
+    }
+  }
+
+  Future<void> _handleConfirmReservation()=>_runCheckout(_performReservation);
+  Future<void> _handleWalletPayment()=>_runCheckout(_performWalletPayment);
+  Future<void> _handleDirectPurchase()=>_runCheckout(_performDirectPurchase);
+
   double _getFinalTotal(double cartTotal) {
+    _invalidateStaleCoupon();
     return (cartTotal - _couponDiscount).clamp(0.0, double.infinity);
   }
 
   Future<void> _applyCoupon() async {
     final code = _couponController.text.trim().toUpperCase();
-    if (code.isEmpty) return;
+    if (code.isEmpty || _isValidatingCoupon || _checkoutRunning) return;
 
     setState(() => _isValidatingCoupon = true);
     final api = context.read<ApiService>();
     final cart = context.read<CartService>();
+    final revision=cart.revision;final scope=DatabaseHelper.scope;
 
     try {
       final res = await api.postAuth('${ApiConfig.apiUrl}/coupons/validate', {
@@ -52,13 +80,17 @@ class _CartScreenState extends State<CartScreen> {
         'monto_subtotal': cart.subtotal,
       });
 
+      if(!mounted || scope!=DatabaseHelper.scope) return;
+      if(revision!=cart.revision) { setState(()=>_isValidatingCoupon=false); return; }
       if (res.success && res.data != null) {
         final data = res.data as Map<String, dynamic>;
         final bool valido = data['valido'] == true;
         if (valido) {
-          final desc = (data['monto_descuento'] as num?)?.toDouble() ?? 0.0;
+          final desc=double.tryParse(data['monto_descuento'].toString());
+          if(desc==null || !desc.isFinite || desc<0 || desc>cart.subtotal) throw const FormatException('Descuento inválido');
           setState(() {
             _appliedCouponCode = code;
+            _couponRevision=revision;
             _couponDiscount = desc;
             _isValidatingCoupon = false;
           });
@@ -110,9 +142,13 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _loadBranches() async {
+    final owner=DatabaseHelper.scope;
+    if(owner==null) return;
+    final db=DatabaseHelper.instance.forScope(owner);
     try {
       final service = context.read<BranchService>();
       final branches = await service.getBranches();
+      if(!mounted || owner!=DatabaseHelper.scope) return;
       if (mounted) {
         setState(() {
           _branches = branches;
@@ -127,7 +163,7 @@ class _CartScreenState extends State<CartScreen> {
       // Cachear en SQLite solo si hay sucursales válidas
       if (branches.isNotEmpty) {
         try {
-          await DatabaseHelper.instance.cacheBranches(branches.map((b) => {
+          await db.cacheBranches(branches.map((b) => {
             'id': b.id,
             'nombre': b.nombre,
             'ciudad': b.ciudad,
@@ -145,8 +181,12 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _restoreBranchesFromCache() async {
+    final owner=DatabaseHelper.scope;
+    if(owner==null) return;
+    final db=DatabaseHelper.instance.forScope(owner);
     try {
-      final cached = await DatabaseHelper.instance.getCachedBranches();
+      final cached = await db.getCachedBranches();
+      if(!mounted || owner!=DatabaseHelper.scope) return;
       if (cached.isNotEmpty && mounted) {
         final fallbackBranches = cached.map((c) => Branch(
           id: c['id'] as String,
@@ -175,7 +215,8 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
-  Future<void> _handleConfirmReservation() async {
+  Future<void> _performReservation() async {
+    final owner=DatabaseHelper.scope;
     final cart = context.read<CartService>();
     if (cart.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -213,6 +254,7 @@ class _CartScreenState extends State<CartScreen> {
         montoTotal: cart.total,
       );
 
+      if(!mounted || owner!=DatabaseHelper.scope) return;
       cart.clearCart();
       setState(() => _isSubmitting = false);
 
@@ -292,7 +334,7 @@ class _CartScreenState extends State<CartScreen> {
         items: items,
       );
 
-      if (mounted) {
+      if (mounted && owner==DatabaseHelper.scope) {
         setState(() => _isSubmitting = false);
         if (response.success) {
           final resData = response.data as Map<String, dynamic>?;
@@ -398,7 +440,8 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
-  Future<void> _handleWalletPayment() async {
+  Future<void> _performWalletPayment() async {
+    final owner=DatabaseHelper.scope;
     final cart = context.read<CartService>();
     final walletService = context.read<WalletService>();
 
@@ -582,7 +625,7 @@ class _CartScreenState extends State<CartScreen> {
       ),
     );
 
-    if (confirmed != true) return;
+    if (!mounted || owner!=DatabaseHelper.scope || confirmed != true) return;
 
     setState(() => _isSubmitting = true);
 
@@ -601,6 +644,7 @@ class _CartScreenState extends State<CartScreen> {
         codigoCupon: _appliedCouponCode,
       );
 
+      if(!mounted || owner!=DatabaseHelper.scope) return;
       if (result['success'] != true) {
         throw Exception(result['error'] ?? 'La compra no fue confirmada');
       }
@@ -610,10 +654,10 @@ class _CartScreenState extends State<CartScreen> {
       cart.clearCart();
       setState(() => _isSubmitting = false);
 
-      await LocalNotificationService.showNotification(
+      unawaited(LocalNotificationService.showNotification(
         title: isOfflineQueued ? '¡Pago Offline con Billetera!' : '¡Compra con Billetera Confirmada!',
-        body: 'Se debitaron Bs. ${total.toStringAsFixed(2)} de tu Billetera Virtual (ID: ${clientOpId.length >= 8 ? clientOpId.substring(0, 8).toUpperCase() : clientOpId}).',
-      );
+        body: isOfflineQueued ? 'Compra guardada para confirmar al reconectar. Importe reservado localmente: Bs. ${total.toStringAsFixed(2)}.' : 'Compra confirmada por el servidor: Bs. ${total.toStringAsFixed(2)}.',
+      ));
 
       if (!mounted) return;
       await showDialog(
@@ -694,7 +738,8 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
-  Future<void> _handleDirectPurchase() async {
+  Future<void> _performDirectPurchase() async {
+    final owner=DatabaseHelper.scope;
     final cart = context.read<CartService>();
     if (cart.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -742,6 +787,7 @@ class _CartScreenState extends State<CartScreen> {
       if (!mounted) return;
       setState(() => _isSubmitting = false);
 
+      if(!mounted || owner!=DatabaseHelper.scope) return;
       if (orderRes == null || orderRes['order_id'] == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -860,6 +906,7 @@ class _CartScreenState extends State<CartScreen> {
                       onPressed: isCapturing
                           ? null
                           : () async {
+                              if(!mounted || owner!=DatabaseHelper.scope) return;
                               setModalState(() => isCapturing = true);
 
                               final saleDetails = cart.items
@@ -1022,6 +1069,7 @@ class _CartScreenState extends State<CartScreen> {
     final accent = AppTheme.getAccent(context);
     final border = AppTheme.getBorder(context);
     final cart = context.watch<CartService>();
+    _invalidateStaleCoupon();
 
     return Scaffold(
       backgroundColor: bg,

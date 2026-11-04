@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
@@ -162,10 +163,10 @@ class _WalletScreenState extends State<WalletScreen> {
                               );
                               if (ok) {
                                 await wService.fetchHistory();
-                                await LocalNotificationService.showNotification(
+                                unawaited(LocalNotificationService.showNotification(
                                   title: 'Recarga Exitosa',
                                   body: 'Se han acreditado Bs. ${amount.toStringAsFixed(2)} en tu Billetera Virtual.',
-                                );
+                                ));
                                 if (ctx.mounted) Navigator.pop(ctx);
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(

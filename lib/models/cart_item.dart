@@ -12,6 +12,6 @@ class CartItem {
     this.quantity = 1,
   });
 
-  double get unitPrice => product.precioBase + variant.precioAdicional;
+  double get unitPrice => product.precioEfectivo + variant.precioAdicional;
   double get totalPrice => unitPrice * quantity;
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import 'config/routes.dart';
 import 'config/theme.dart';
 import 'screens/auth/login_screen.dart';
@@ -37,10 +38,15 @@ import 'screens/wallet/wallet_screen.dart';
 import 'services/favorite_service.dart';
 import 'screens/shop/favorites_screen.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await LocalNotificationService.initialize();
   runApp(const MyApp());
+  // Native permission prompts must not hold the first frame hostage.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    LocalNotificationService.initialize().catchError((Object error) {
+      debugPrint('No se pudieron iniciar las notificaciones: $error');
+    });
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -50,9 +56,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        Provider<StorageService>(
-          create: (_) => StorageService(),
-        ),
+        Provider<StorageService>(create: (_) => StorageService()),
         ChangeNotifierProvider<ConnectivityService>(
           create: (_) => ConnectivityService(),
         ),
@@ -73,7 +77,11 @@ class MyApp extends StatelessWidget {
             return AuthService(api, storage);
           },
         ),
-        ChangeNotifierProxyProvider2<ApiService, ConnectivityService, OfflineSyncService>(
+        ChangeNotifierProxyProvider2<
+          ApiService,
+          ConnectivityService,
+          OfflineSyncService
+        >(
           create: (context) => OfflineSyncService(
             context.read<ApiService>(),
             context.read<ConnectivityService>(),
@@ -114,12 +122,8 @@ class MyApp extends StatelessWidget {
             return NotificationService(api);
           },
         ),
-        ChangeNotifierProvider<CartService>(
-          create: (_) => CartService(),
-        ),
-        ChangeNotifierProvider<TtsService>(
-          create: (_) => TtsService(),
-        ),
+        ChangeNotifierProvider<CartService>(create: (_) => CartService()),
+        ChangeNotifierProvider<TtsService>(create: (_) => TtsService()),
         ChangeNotifierProxyProvider<ApiService, ChatbotService>(
           create: (context) => ChatbotService(context.read<ApiService>()),
           update: (_, api, chatbot) {
@@ -127,7 +131,12 @@ class MyApp extends StatelessWidget {
             return ChatbotService(api);
           },
         ),
-        ChangeNotifierProxyProvider3<ApiService, ConnectivityService, StorageService, WalletService>(
+        ChangeNotifierProxyProvider3<
+          ApiService,
+          ConnectivityService,
+          StorageService,
+          WalletService
+        >(
           create: (context) => WalletService(
             context.read<ApiService>(),
             context.read<ConnectivityService>(),
@@ -138,7 +147,12 @@ class MyApp extends StatelessWidget {
             return WalletService(api, conn, storage);
           },
         ),
-        ChangeNotifierProxyProvider3<ApiService, ConnectivityService, StorageService, FavoriteService>(
+        ChangeNotifierProxyProvider3<
+          ApiService,
+          ConnectivityService,
+          StorageService,
+          FavoriteService
+        >(
           create: (context) => FavoriteService(
             context.read<ApiService>(),
             context.read<ConnectivityService>(),
@@ -168,7 +182,8 @@ class MyApp extends StatelessWidget {
               AppRoutes.reservations: (context) => const ReservationsScreen(),
               AppRoutes.purchases: (context) => const PurchaseHistoryScreen(),
               AppRoutes.branches: (context) => const BranchesPublicScreen(),
-              AppRoutes.virtualFitting: (context) => const VirtualFittingScreen(),
+              AppRoutes.virtualFitting: (context) =>
+                  const VirtualFittingScreen(),
               AppRoutes.offlineSync: (context) => const OfflineSyncScreen(),
               AppRoutes.chatbot: (context) => const ChatbotScreen(),
               AppRoutes.wallet: (context) => const WalletScreen(),

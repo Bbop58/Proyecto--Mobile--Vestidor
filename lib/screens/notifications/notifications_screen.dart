@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../config/theme.dart';
 import '../../services/notification_service.dart';
-
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -94,7 +94,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, color: textPrimary, size: 20),
+          icon: Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: textPrimary,
+            size: 20,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
@@ -103,12 +107,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               if (notifService.unreadCount == 0) return const SizedBox.shrink();
               return TextButton(
                 onPressed: () async {
-                  await notifService.markAllAsRead();
+                  final success = await notifService.markAllAsRead();
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: const Text('Todas las notificaciones marcadas como leídas'),
-                        backgroundColor: AppTheme.successColor,
+                        content: Text(
+                          success
+                              ? 'Todas las notificaciones marcadas como leídas'
+                              : 'No se pudieron marcar las notificaciones. Reintenta.',
+                        ),
+                        backgroundColor: success
+                            ? AppTheme.successColor
+                            : AppTheme.errorColor,
                         behavior: SnackBarBehavior.floating,
                         duration: const Duration(seconds: 2),
                       ),
@@ -131,12 +141,34 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       body: Consumer<NotificationService>(
         builder: (context, notifService, _) {
           if (notifService.isLoading && notifService.notifications.isEmpty) {
-            return Center(
-              child: CircularProgressIndicator(color: accent),
-            );
+            return Center(child: CircularProgressIndicator(color: accent));
           }
 
           final notifications = notifService.notifications;
+
+          if (notifService.errorMessage != null) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      notifService.errorMessage!,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: notifService.isLoading
+                          ? null
+                          : notifService.fetchNotifications,
+                      child: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
 
           if (notifications.isEmpty) {
             return Center(
@@ -201,14 +233,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       notifService.markAsRead(notif.id);
                     }
                   },
-                  borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                  borderRadius: BorderRadius.circular(
+                    AppTheme.borderRadiusMedium,
+                  ),
                   child: Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       color: notif.isRead
                           ? cardBg
                           : accent.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                      borderRadius: BorderRadius.circular(
+                        AppTheme.borderRadiusMedium,
+                      ),
                       border: Border.all(
                         color: notif.isRead
                             ? border
@@ -252,7 +288,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                       notif.title,
                                       style: TextStyle(
                                         fontSize: 14,
-                                        fontWeight: notif.isRead ? FontWeight.w600 : FontWeight.w700,
+                                        fontWeight: notif.isRead
+                                            ? FontWeight.w600
+                                            : FontWeight.w700,
                                         color: textPrimary,
                                       ),
                                     ),

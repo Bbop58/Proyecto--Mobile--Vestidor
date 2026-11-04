@@ -35,13 +35,22 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
   }
 
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if(oldVersion<6) {
+      await _createFavoriteTables(db);
+      final columns=await db.rawQuery('PRAGMA table_info(cached_products)');
+      if(columns.isNotEmpty) {
+        for(final name in ['categoria_id','temporada']) {
+          if(!columns.any((row)=>row['name']==name)) await db.execute('ALTER TABLE cached_products ADD COLUMN $name TEXT');
+        }
+      }
+    }
     if (oldVersion < 4) {
       // Check columns because version-1 upgrades create the current wallet tables.
       for (final entry in {'local_wallet': {'saldo_retenido': 'REAL NOT NULL DEFAULT 0.0'},
@@ -90,6 +99,7 @@ class DatabaseHelper {
   }
 
   Future<void> _createFavoriteTables(Database db) async {
+    await db.execute('CREATE TABLE IF NOT EXISTS favorite_mutations (product_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, desired INTEGER NOT NULL, revision TEXT NOT NULL, product_json TEXT NOT NULL)');
     await db.execute('''
       CREATE TABLE IF NOT EXISTS local_favorites (
         product_id TEXT PRIMARY KEY,
@@ -167,6 +177,8 @@ class DatabaseHelper {
         id TEXT PRIMARY KEY,
         nombre TEXT NOT NULL,
         categoria TEXT,
+        categoria_id TEXT,
+        temporada TEXT,
         precio_base REAL NOT NULL,
         precio_oferta REAL,
         en_oferta INTEGER DEFAULT 0,
@@ -229,13 +241,16 @@ class DatabaseHelper {
   }
 
   // ── PRODUCTOS Y VARIANTES ──
-  Future<void> cacheProducts(List<Map<String, dynamic>> products) async {
+  Future<void> cacheProducts(List<Map<String, dynamic>> products,{bool replace=false}) async {
     final db = await database;
     final batch = db.batch();
+    if(replace) batch.delete('cached_products');
     for (final p in products) {
       batch.insert('cached_products', {
         'id': p['id'],
         'nombre': p['nombre'],
+        'categoria_id':p['categoria_id'],
+        'temporada':p['temporada'],
         'categoria': p['categoria'] is Map
             ? p['categoria']['nombre']
             : (p['categoria']?.toString() ?? ''),
@@ -257,6 +272,41 @@ class DatabaseHelper {
   }
 
   // ── FAVORITOS (WISHLIST) OFFLINE ──
+  Future<void> queueFavoriteChange(String user,Map<String,dynamic> product,bool desired,String revision) async {
+    final db=await database;
+    await db.transaction((tx) async {
+      final id=product['id'];final encoded=jsonEncode(product);
+      await tx.insert('favorite_mutations',{'product_id':id,'user_id':user,'desired':desired?1:0,'revision':revision,'product_json':encoded},conflictAlgorithm:ConflictAlgorithm.replace);
+      if(desired) {
+        await tx.insert('local_favorites',{'product_id':id,'user_id':user,'product_json':encoded,'created_at':DateTime.now().toUtc().toIso8601String()},conflictAlgorithm:ConflictAlgorithm.replace);
+      } else { await tx.delete('local_favorites',where:'product_id=?',whereArgs:[id]); }
+    });
+  }
+
+  Future<List<Map<String,dynamic>>> pendingFavoriteChanges(String user) async {
+    final db=await database;return db.query('favorite_mutations',where:'user_id=?',whereArgs:[user]);
+  }
+
+  Future<void> acknowledgeFavoriteChange(String id,String revision) async {
+    final db=await database;await db.delete('favorite_mutations',where:'product_id=? AND revision=?',whereArgs:[id,revision]);
+  }
+
+  Future<void> replaceFavoriteSnapshot(String user,List<Map<String,dynamic>> products) async {
+    final db=await database;
+    await db.transaction((tx) async {
+      final pending=await tx.query('favorite_mutations',where:'user_id=?',whereArgs:[user]);
+      final merged={for(final product in products) product['id']:jsonEncode(product)};
+      for(final row in pending) {
+        if(row['desired']==1) { merged[row['product_id']]=row['product_json'].toString(); }
+        else { merged.remove(row['product_id']); }
+      }
+      await tx.delete('local_favorites');
+      for(final entry in merged.entries) {
+        await tx.insert('local_favorites',{'product_id':entry.key,'user_id':user,'product_json':entry.value,'created_at':DateTime.now().toUtc().toIso8601String()});
+      }
+    });
+  }
+
   Future<void> saveLocalFavorite(
     String productId,
     String? userId,
@@ -285,8 +335,8 @@ class DatabaseHelper {
     if (userId != null && userId.isNotEmpty) {
       return await db.query(
         'local_favorites',
-        where: 'user_id = ? OR user_id = ""',
-        whereArgs: [userId],
+        where: 'user_id = ? OR user_id = ?',
+        whereArgs: [userId, ''],
       );
     }
     return await db.query('local_favorites');
