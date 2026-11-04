@@ -400,7 +400,7 @@ class _VirtualFittingScreenState extends State<VirtualFittingScreen> {
             validator: (v) {
               if (v == null || v.trim().isEmpty) return 'Requerido';
               final n = double.tryParse(v.trim());
-              if (n == null) return 'Número inválido';
+              if (n == null || !n.isFinite) return 'Número inválido';
               if (n < min || n > max) return '${min.toInt()}-${max.toInt()}';
               return null;
             },

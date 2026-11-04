@@ -10,6 +10,7 @@ import '../../services/inventory_service.dart';
 import '../../services/product_service.dart';
 import '../../services/favorite_service.dart';
 import 'cart_screen.dart';
+import '../../widgets/purchase_summary_bar.dart';
 import 'virtual_fitting_screen.dart';
 import '../virtual_tryon_screen.dart';
 
@@ -466,9 +467,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         ),
                       ),
                     ),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
+                  Wrap(
+                    spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
                         'Bs. ${_currentUnitPrice.toStringAsFixed(2)}',
@@ -513,8 +513,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         borderRadius: BorderRadius.circular(AppTheme.borderRadiusSmall),
                         border: Border.all(color: border),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      child: Wrap(
+                        spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Icon(Icons.qr_code_2_rounded, size: 18, color: textSecondary),
                           const SizedBox(width: 6),
@@ -555,10 +555,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
                   // Selector de Tallas
                   if (_availableSizes.isNotEmpty) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Row(
+                        Wrap(
+                          spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Text(
                               'Talla',
@@ -578,8 +579,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                               ),
                               borderRadius: BorderRadius.circular(4),
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                child: Row(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+                                child: Wrap(
+                                  spacing: 4, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     Icon(Icons.accessibility_new_rounded, size: 14, color: accent),
                                     const SizedBox(width: 4),
@@ -645,8 +647,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
                   // Selector de Colores
                   if (_availableColorsForSize.isNotEmpty) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
                           'Color',
@@ -788,8 +790,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   const SizedBox(height: 24),
 
                   // Cantidad
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Wrap(
+                    spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
                         'Cantidad',
@@ -806,6 +808,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           border: Border.all(color: border),
                         ),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
                               icon: const Icon(Icons.remove, size: 18),
@@ -850,67 +853,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ],
       ),
 
-      // Barra inferior con Total y Botón de Añadir al Carrito
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        decoration: BoxDecoration(
-          color: cardBg,
-          border: Border(top: BorderSide(color: border)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, -3),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          child: Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Total a pagar',
-                      style: TextStyle(fontSize: 11, color: textSecondary),
-                    ),
-                    Text(
-                      'Bs. ${(_currentUnitPrice * _quantity).toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: accent,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                flex: 3,
-                child: ElevatedButton.icon(
-                  onPressed: _handleAddToCart,
-                  icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
-                  label: const Text(
-                    'Añadir al Carrito',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: accent,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 2,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(color: cardBg, border: Border(top: BorderSide(color: border))),
+        child: PurchaseSummaryBar(total: _currentUnitPrice * _quantity, onAdd: _handleAddToCart),
       ),
     );
   }
@@ -936,8 +881,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 4),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text(
               'Disponibilidad por sucursal',
@@ -962,7 +907,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
               border: Border.all(color: border),
             ),
-            child: Row(
+            child: Wrap(
+              spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Icon(Icons.info_outline, size: 16, color: textSecondary),
                 const SizedBox(width: 8),

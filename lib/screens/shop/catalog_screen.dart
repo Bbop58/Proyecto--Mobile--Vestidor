@@ -13,6 +13,7 @@ import '../../services/product_service.dart';
 import '../../services/season_service.dart';
 import '../../services/notification_service.dart';
 import 'cart_screen.dart';
+import '../../widgets/shop_product_tile.dart';
 import 'product_detail_screen.dart';
 import 'virtual_fitting_screen.dart';
 import 'favorites_screen.dart';
@@ -244,37 +245,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         shape: Border(bottom: BorderSide(color: border)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: AppTheme.logoBadgeDecorationOf(context),
-              child: const Icon(Icons.storefront_rounded, size: 20, color: AppTheme.accentColor),
-            ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'FICCT STORE',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: textPrimary,
-                  ),
-                ),
-                Text(
-                  'Catálogo & Compras',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+        title: Text('Catálogo', maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: textPrimary)),
         actions: [
           // Bell Icon con Badge de Notificaciones
           Consumer<NotificationService>(
@@ -456,7 +428,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
             // Filtro horizontal de categorías
             Container(
-              height: 44,
+              height: 48 + (MediaQuery.textScalerOf(context).scale(16) - 16),
               margin: const EdgeInsets.only(bottom: 4),
               child: ListView(
                 scrollDirection: Axis.horizontal,
@@ -481,7 +453,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             // Filtro horizontal de temporadas
             if (_seasons.isNotEmpty)
               Container(
-                height: 40,
+                height: 48 + (MediaQuery.textScalerOf(context).scale(16) - 16),
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListView(
                   scrollDirection: Axis.horizontal,
@@ -561,7 +533,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                   label: const Text('Reintentar'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: accent,
-                                    foregroundColor: Colors.white,
+                                    foregroundColor: AppTheme.onAccent(context),
                                   ),
                                 ),
                               ],
@@ -593,9 +565,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             )
                           : GridView.builder(
                               padding: const EdgeInsets.all(16),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                childAspectRatio: 0.72,
+                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: _catalogColumns(context),
+                                mainAxisExtent: _catalogTileHeight(context),
                                 crossAxisSpacing: 14,
                                 mainAxisSpacing: 14,
                               ),
@@ -651,7 +623,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  color: isSelected ? Colors.white : textSecondary,
+                  color: isSelected ? AppTheme.onAccent(context) : textSecondary,
                 ),
               ),
             ),
@@ -720,240 +692,26 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
   }
 
-  Widget _buildProductCard(BuildContext context, Product product) {
-    final cardBg = AppTheme.getCardBg(context);
-    final textPrimary = AppTheme.getTextPrimary(context);
-    final textSecondary = AppTheme.getTextSecondary(context);
-    final border = AppTheme.getBorder(context);
-    final accent = AppTheme.getAccent(context);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
-        border: Border.all(color: border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ProductDetailScreen(productId: product.id),
-              ),
-            );
-          },
-          borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Imagen del producto o contenedor con icono estilizado
-              Expanded(
-                flex: 5,
-                child: Stack(
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.08),
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(AppTheme.borderRadiusMedium),
-                        ),
-                      ),
-                      child: product.imagenUrl != null && product.imagenUrl!.isNotEmpty
-                          ? ClipRRect(
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(AppTheme.borderRadiusMedium),
-                              ),
-                              child: Image.network(
-                                product.imagenUrl!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (ctx, err, stack) => _buildPlaceholderImage(accent),
-                              ),
-                            )
-                          : _buildPlaceholderImage(accent),
-                    ),
-                    if (product.enOferta)
-                      Positioned(
-                        top: 8,
-                        left: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade700,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            product.porcentajeDescuento > 0
-                                ? '-${product.porcentajeDescuento}% OFF'
-                                : 'OFERTA',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      )
-                    else if (product.temporada != null && product.temporada!.isNotEmpty)
-                      Positioned(
-                        top: 8,
-                        left: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.black87,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            product.temporada!,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    // Botón de Favoritos (Wishlist)
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: Consumer<FavoriteService>(
-                        builder: (ctx, favService, _) {
-                          final isFav = favService.isFavorite(product.id);
-                          return Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(20),
-                              onTap: () => favService.toggleFavorite(product),
-                              child: Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: (Theme.of(context).brightness == Brightness.dark
-                                      ? Colors.black54
-                                      : Colors.white.withValues(alpha: 0.85)),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                                  size: 18,
-                                  color: isFav ? Colors.red : Colors.grey.shade600,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Información del producto
-              Expanded(
-                flex: 4,
-                child: Padding(
-                  padding: const EdgeInsets.all(10.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (product.categoriaNombre != null)
-                            Text(
-                              product.categoriaNombre!.toUpperCase(),
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: accent,
-                                letterSpacing: 0.5,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          const SizedBox(height: 2),
-                          Text(
-                            product.nombre,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: textPrimary,
-                              height: 1.2,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Bs. ${product.precioEfectivo.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: product.enOferta ? Colors.red.shade700 : accent,
-                                ),
-                              ),
-                              if (product.enOferta)
-                                Text(
-                                  'Bs. ${product.precioBase.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    decoration: TextDecoration.lineThrough,
-                                    color: textSecondary,
-                                  ),
-                                ),
-                            ],
-                          ),
-                          Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.12),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.arrow_forward_ios_rounded,
-                              size: 11,
-                              color: accent,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  int _catalogColumns(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final large = MediaQuery.textScalerOf(context).scale(16) > 21;
+    return width < 380 || large ? 1 : (width >= 900 ? 3 : 2);
   }
 
-  Widget _buildPlaceholderImage(Color accent) {
-    return Center(
-      child: Icon(
-        Icons.checkroom_rounded,
-        size: 48,
-        color: accent.withValues(alpha: 0.4),
-      ),
-    );
+  double _catalogTileHeight(BuildContext context) {
+    final columns = _catalogColumns(context);
+    final width = (MediaQuery.sizeOf(context).width - 32 - (columns - 1) * 12) / columns;
+    final scale = MediaQuery.textScalerOf(context).scale(16) / 16;
+    return width * 1.15 + 145 * scale;
+  }
+
+  Widget _buildProductCard(BuildContext context, Product product) {
+    return Consumer<FavoriteService>(builder: (context, favorites, _) => ShopProductTile(
+      product: product,
+      isFavorite: favorites.isFavorite(product.id),
+      onFavorite: () => favorites.toggleFavorite(product),
+      onOpen: () => Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ProductDetailScreen(productId: product.id))),
+    ));
   }
 }

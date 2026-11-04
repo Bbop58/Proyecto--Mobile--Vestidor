@@ -79,62 +79,75 @@ class _Reservations extends ReservationService {
 }
 
 void main() {
-  testWidgets(
-    'two reserve taps before repaint send only once and failure retains cart',
-    (tester) async {
-      await tester.runAsync(() async {
-        sqfliteFfiInit();
-        databaseFactory = databaseFactoryFfi;
-        final dir = await Directory.systemTemp.createTemp(
-          'fashionstore_double_reserve_',
-        );
-        await databaseFactory.setDatabasesPath(dir.path);
-      });
-      DatabaseHelper.activateScope('double:user');
-      final cart = CartService()..addItem(product(), variant());
-      final api = _Api(), online = _Online();
-      final wallet = _Wallet(api, online, StorageService()),
-          reservations = _Reservations(api);
-      await tester.pumpWidget(
-        MultiProvider(
-          providers: [
-            ChangeNotifierProvider<CartService>.value(value: cart),
-            Provider<ApiService>.value(value: api),
-            Provider<BranchService>.value(value: _Branches(api)),
-            Provider<ReservationService>.value(value: reservations),
-            ChangeNotifierProvider<WalletService>.value(value: wallet),
-            ChangeNotifierProvider<ConnectivityService>.value(value: online),
-          ],
-          child: const MaterialApp(home: CartScreen()),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final button = find.text('Apartar con Reserva Click & Collect');
-      await tester.scrollUntilVisible(
-        button,
-        400,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
-      try {
-        await tester.tap(button);
-        await tester.tap(button);
-        expect(reservations.calls, 1);
-      } finally {
-        reservations.pending.complete(
-          ApiResponse(success: false, statusCode: 503, error: 'QA retry'),
+  for (final scale in [1.0, 2.0]) {
+    testWidgets(
+      'narrow cart at scale $scale: reserve taps send once and failure retains cart',
+      (tester) async {
+        tester.view.physicalSize = const Size(320, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.runAsync(() async {
+          sqfliteFfiInit();
+          databaseFactory = databaseFactoryFfi;
+          final dir = await Directory.systemTemp.createTemp(
+            'fashionstore_double_reserve_',
+          );
+          await databaseFactory.setDatabasesPath(dir.path);
+        });
+        DatabaseHelper.activateScope('double:user');
+        final cart = CartService()..addItem(product(), variant());
+        final api = _Api(), online = _Online();
+        final wallet = _Wallet(api, online, StorageService()),
+            reservations = _Reservations(api);
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider<CartService>.value(value: cart),
+              Provider<ApiService>.value(value: api),
+              Provider<BranchService>.value(value: _Branches(api)),
+              Provider<ReservationService>.value(value: reservations),
+              ChangeNotifierProvider<WalletService>.value(value: wallet),
+              ChangeNotifierProvider<ConnectivityService>.value(value: online),
+            ],
+            child: MaterialApp(
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(context)
+                    .copyWith(textScaler: TextScaler.linear(scale)),
+                child: child!,
+              ),
+              home: const CartScreen(),
+            ),
+          ),
         );
         await tester.pumpAndSettle();
-        expect(cart.isEmpty, false);
-        await tester.pumpWidget(const SizedBox.shrink());
-        cart.dispose();
-        wallet.dispose();
-        online.dispose();
-        api.dispose();
-        DatabaseHelper.activateScope(null);
-      }
-    },
-  );
+        final button = find.text('Apartar con Reserva Click & Collect');
+        await tester.scrollUntilVisible(
+          button,
+          400,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        try {
+          await tester.tap(button);
+          await tester.tap(button);
+          expect(reservations.calls, 1);
+        } finally {
+          reservations.pending.complete(
+            ApiResponse(success: false, statusCode: 503, error: 'QA retry'),
+          );
+          await tester.pumpAndSettle();
+          expect(cart.isEmpty, false);
+          await tester.pumpWidget(const SizedBox.shrink());
+          cart.dispose();
+          wallet.dispose();
+          online.dispose();
+          api.dispose();
+          DatabaseHelper.activateScope(null);
+        }
+      },
+    );
+  }
   testWidgets(
     'coupon Decimal response applies and cart mutation invalidates discount',
     (tester) async {

@@ -9,7 +9,7 @@ class AppTheme {
   static const Color lightInput       = Color(0xFFFFFFFF); // Pure White Input
   static const Color lightTextPrimary = Color(0xFF0F172A); // Slate 900 Graphite
   static const Color lightTextSecondary = Color(0xFF475569); // Slate 600
-  static const Color lightTextMuted   = Color(0xFF94A3B8); // Slate 400
+  static const Color lightTextMuted   = Color(0xFF526176); // Readable supporting text
   static const Color lightBorder      = Color(0xFFE2E8F0); // Crisp Slate 200 Border
   static const Color lightAccent      = Color(0xFF4F46E5); // Modern Executive Indigo
   static const Color lightAccentGlow  = Color(0x1F4F46E5); // rgba(79, 70, 229, 0.12)
@@ -21,15 +21,15 @@ class AppTheme {
   static const Color darkCard         = Color(0xFF131F33); // Dark Card Surface
   static const Color darkInput        = Color(0xFF0E1726); // Dark Input Surface
   static const Color darkTextPrimary  = Color(0xFFF4F1EA); // Warm high contrast
-  static const Color darkTextSecondary= Color(0xFF94A3B8); // Slate 400
-  static const Color darkTextMuted    = Color(0xFF64748B); // Slate 500
+  static const Color darkTextSecondary= Color(0xFF526176); // Readable supporting text
+  static const Color darkTextMuted    = Color(0xFFA5B4C7); // Readable supporting text
   static const Color darkBorder       = Color(0x1AF4F1EA); // rgba(244, 241, 234, 0.10)
   static const Color darkAccent       = Color(0xFFF59E0B); // Amber Bright
   static const Color darkAccentGlow   = Color(0x24F59E0B); // rgba(245, 158, 11, 0.14)
   static const Color darkAccentBorder = Color(0x4DF59E0B); // rgba(245, 158, 11, 0.30)
 
   // ── Constantes y Estados ───────────────────────────────────────────────────
-  static const Color accentColor      = Color(0xFFD97706);
+  static const Color accentColor      = Color(0xFFB45309);
   static const Color successColor     = Color(0xFF059669);
   static const Color successBg        = Color(0x1A059669);
   static const Color errorColor       = Color(0xFFDC2626);
@@ -74,6 +74,9 @@ class AppTheme {
 
   static Color getBorder(BuildContext context) =>
       isDark(context) ? darkBorder : lightBorder;
+
+  static Color onAccent(BuildContext context) =>
+      isDark(context) ? darkBg : Colors.white;
 
   static Color getAccent(BuildContext context) =>
       isDark(context) ? darkAccent : lightAccent;
@@ -170,6 +173,14 @@ class AppTheme {
         onSurface: lightTextPrimary,
         onError: Colors.white,
       ),
+      materialTapTargetSize: MaterialTapTargetSize.padded,
+      elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(
+        minimumSize: const Size(48, 48),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      )),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48))),
+      iconButtonTheme: IconButtonThemeData(style: IconButton.styleFrom(minimumSize: const Size(48, 48))),
       fontFamily: 'Roboto',
       dividerColor: lightBorder,
       cardColor: lightCard,
@@ -185,14 +196,22 @@ class AppTheme {
       primaryColor: darkAccent,
       colorScheme: const ColorScheme.dark(
         primary: darkAccent,
-        secondary: Color(0xFFD97706),
+        secondary: Color(0xFFF59E0B),
         surface: darkCard,
         error: errorColor,
-        onPrimary: Colors.white,
-        onSecondary: Colors.white,
+        onPrimary: darkBg,
+        onSecondary: darkBg,
         onSurface: darkTextPrimary,
         onError: Colors.white,
       ),
+      materialTapTargetSize: MaterialTapTargetSize.padded,
+      elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(
+        minimumSize: const Size(48, 48),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      )),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48))),
+      iconButtonTheme: IconButtonThemeData(style: IconButton.styleFrom(minimumSize: const Size(48, 48))),
       fontFamily: 'Roboto',
       dividerColor: darkBorder,
       cardColor: darkCard,

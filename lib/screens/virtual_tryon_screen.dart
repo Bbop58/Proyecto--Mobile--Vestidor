@@ -31,6 +31,7 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
   bool _isLoading = false;
   String? _generatedImageBase64;
   String? _errorMessage;
+  String _resultMessage='';
 
   Future<void> _pickImage(ImageSource source) async {
     try {
@@ -83,6 +84,7 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
       if (mounted) {
         setState(() {
           _generatedImageBase64 = result;
+          _resultMessage=aiService.resultMessage;
           _isLoading = false;
         });
       }
@@ -160,6 +162,11 @@ class _VirtualTryOnScreenState extends State<VirtualTryOnScreen> {
             // Imagen generada a pantalla completa
             Center(
               child: _buildDecodedImage(_generatedImageBase64!),
+            ),
+            Positioned(
+              top: MediaQuery.of(context).padding.top+72,left:16,right:16,
+              child: Material(color:Colors.black87,child:Padding(
+                padding:const EdgeInsets.all(10),child:Text(_resultMessage,style:const TextStyle(color:Colors.white)))),
             ),
 
             // Barra superior traslúcida con botón de cerrar

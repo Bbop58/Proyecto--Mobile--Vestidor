@@ -2,6 +2,7 @@ import '../config/api_config.dart';
 import 'api_service.dart';
 
 class AIService {
+  String resultMessage='';
   final ApiService _api;
 
   AIService(this._api);
@@ -27,6 +28,7 @@ class AIService {
 
     if (response.success && response.data != null && response.data is Map<String, dynamic>) {
       final map = response.data as Map<String, dynamic>;
+      resultMessage=map['mensaje']?.toString() ?? 'Vista previa; el ajuste real puede variar.';
       final img = map['imagen_resultado_base64']?.toString();
       if (img != null && img.isNotEmpty) {
         return img;

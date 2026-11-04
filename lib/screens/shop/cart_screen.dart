@@ -1206,7 +1206,8 @@ class _CartScreenState extends State<CartScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 4),
-                              Row(
+                              Wrap(
+                                spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1242,8 +1243,8 @@ class _CartScreenState extends State<CartScreen> {
                                 ],
                               ),
                               const SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              Wrap(
+                                spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   Text(
                                     'Bs. ${item.totalPrice.toStringAsFixed(2)}',
@@ -1254,12 +1255,13 @@ class _CartScreenState extends State<CartScreen> {
                                     ),
                                   ),
                                   Row(
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
                                       IconButton(
                                         icon: const Icon(Icons.remove_circle_outline, size: 20),
                                         color: textSecondary,
                                         padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
+                                        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                                         onPressed: () => cart.updateQuantity(
                                           item.variant.id,
                                           item.quantity - 1,
@@ -1283,7 +1285,7 @@ class _CartScreenState extends State<CartScreen> {
                                            color: item.quantity < 3 ? accent : textSecondary.withValues(alpha: 0.4),
                                          ),
                                          padding: EdgeInsets.zero,
-                                         constraints: const BoxConstraints(),
+                                         constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                                          onPressed: item.quantity < 3
                                              ? () => cart.updateQuantity(
                                                    item.variant.id,
@@ -1324,7 +1326,8 @@ class _CartScreenState extends State<CartScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      Wrap(
+                        spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Icon(Icons.store_mall_directory_rounded, size: 20, color: accent),
                           const SizedBox(width: 8),
@@ -1411,7 +1414,8 @@ class _CartScreenState extends State<CartScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      Wrap(
+                        spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Icon(Icons.local_offer_outlined, size: 18, color: accent),
                           const SizedBox(width: 8),
@@ -1441,7 +1445,7 @@ class _CartScreenState extends State<CartScreen> {
                                 ),
                               ),
                               IconButton(
-                                constraints: const BoxConstraints(),
+                                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                                 padding: EdgeInsets.zero,
                                 icon: const Icon(Icons.close_rounded, size: 18, color: Colors.red),
                                 onPressed: () {
@@ -1509,8 +1513,8 @@ class _CartScreenState extends State<CartScreen> {
                   ),
                   child: Column(
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text('Subtotal prendas', style: TextStyle(color: textSecondary, fontSize: 13)),
                           Text(
@@ -1521,8 +1525,8 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                       if (_couponDiscount > 0) ...[
                         const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        Wrap(
+                          spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Text(
                               'Descuento Cupón ($_appliedCouponCode)',
@@ -1536,8 +1540,8 @@ class _CartScreenState extends State<CartScreen> {
                         ),
                       ],
                       const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text('Costo de reserva', style: TextStyle(color: textSecondary, fontSize: 13)),
                           const Text(
@@ -1547,8 +1551,8 @@ class _CartScreenState extends State<CartScreen> {
                         ],
                       ),
                       Divider(height: 20, color: border),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(
                             'Total a Pagar en Tienda',
@@ -1584,8 +1588,8 @@ class _CartScreenState extends State<CartScreen> {
                                   child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                                 )
                               : const Icon(Icons.account_balance_wallet_rounded),
-                          label: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          label: Wrap(
+                            spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Text(
                                 conn.isOnline ? 'Pagar con Billetera Virtual' : 'Pagar con Billetera (Offline)',
@@ -1618,8 +1622,8 @@ class _CartScreenState extends State<CartScreen> {
                         if (!hasFunds)
                           Padding(
                             padding: const EdgeInsets.only(top: 4, bottom: 4),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            child: Wrap(
+                              spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 Text(
                                   'Saldo insuficiente para esta compra. ',

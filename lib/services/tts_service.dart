@@ -66,15 +66,24 @@ class TtsService extends ChangeNotifier {
     return text
         // Eliminar bloques de código y código inline
         .replaceAll(RegExp(r'```[\s\S]*?```'), 'código omitido.')
-        .replaceAll(RegExp(r'`([^`]+)`'), r'$1')
+        .replaceAllMapped(RegExp(r'`([^`]+)`'), (match) => match.group(1) ?? '')
         // Eliminar formato negrita, cursiva y tachado
-        .replaceAll(RegExp(r'(\*\*|__)(.*?)\1'), r'$2')
-        .replaceAll(RegExp(r'(\*|_)(.*?)\1'), r'$2')
-        .replaceAll(RegExp(r'~~(.*?)~~'), r'$1')
+        .replaceAllMapped(
+          RegExp(r'(\*\*|__)(.*?)\1'),
+          (match) => match.group(2) ?? '',
+        )
+        .replaceAllMapped(
+          RegExp(r'(\*|_)(.*?)\1'),
+          (match) => match.group(2) ?? '',
+        )
+        .replaceAllMapped(RegExp(r'~~(.*?)~~'), (match) => match.group(1) ?? '')
         // Eliminar encabezados (###)
         .replaceAll(RegExp(r'#{1,6}\s+'), '')
         // Eliminar enlaces [texto](url) -> texto
-        .replaceAll(RegExp(r'\[([^\]]+)\]\([^\)]+\)'), r'$1')
+        .replaceAllMapped(
+          RegExp(r'\[([^\]]+)\]\([^\)]+\)'),
+          (match) => match.group(1) ?? '',
+        )
         // Eliminar viñetas y numerales de lista
         .replaceAll(RegExp(r'^\s*[\*\-\+•]\s+', multiLine: true), '')
         .replaceAll(RegExp(r'^\s*\d+\.\s+', multiLine: true), '')
@@ -130,4 +139,3 @@ class TtsService extends ChangeNotifier {
     super.dispose();
   }
 }
-
