@@ -14,6 +14,7 @@ class ReservationDetailScreen extends StatelessWidget {
       case 'PREPARADA':
         return AppTheme.successColor;
       case 'RECOGIDA':
+      case 'COMPLETADA':
         return AppTheme.getAccent(context);
       case 'CANCELADA':
         return AppTheme.errorColor;
@@ -32,6 +33,8 @@ class ReservationDetailScreen extends StatelessWidget {
         return 'Lista para recoger';
       case 'RECOGIDA':
         return 'Entregada al cliente';
+      case 'COMPLETADA':
+        return 'Liquidada en caja';
       case 'CANCELADA':
         return 'Cancelada';
       case 'EXPIRADA':
@@ -48,6 +51,7 @@ class ReservationDetailScreen extends StatelessWidget {
       case 'PREPARADA':
         return Icons.check_box_rounded;
       case 'RECOGIDA':
+      case 'COMPLETADA':
         return Icons.shopping_bag_rounded;
       case 'CANCELADA':
         return Icons.cancel_rounded;
