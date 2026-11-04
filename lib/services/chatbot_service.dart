@@ -147,6 +147,7 @@ class ChatbotService extends ChangeNotifier {
       final response = await _apiService.postAuth(
         ApiConfig.chatbotMessageUrl,
         payload,
+        const Duration(seconds: 30),
       );
 
       if (_disposed || generation != _generation || _isCancelled) return;

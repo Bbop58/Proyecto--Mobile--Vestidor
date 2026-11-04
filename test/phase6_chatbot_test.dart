@@ -9,13 +9,17 @@ import 'package:mobile/services/chatbot_service.dart';
 class _Api extends ApiService {
   _Api() : super(StorageService());
   final pending = Completer<ApiResponse>();
+  Duration? lastTimeout;
   @override
   Future<ApiResponse> postAuth(
     String url, [
     Map<String, dynamic>? body,
     Duration? timeout,
     String? expectedScope,
-  ]) => pending.future;
+  ]) {
+    lastTimeout = timeout;
+    return pending.future;
+  }
 }
 
 void main() {
@@ -26,6 +30,7 @@ void main() {
       final transport = _Api();
       final subject = ChatbotService(transport);
       final request = subject.sendMessage('mi saldo');
+      expect(transport.lastTimeout, const Duration(seconds: 30));
       DatabaseHelper.activateScope('b:user');
       transport.pending.complete(
         ApiResponse(
