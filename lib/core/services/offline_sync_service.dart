@@ -6,12 +6,15 @@ import 'package:uuid/uuid.dart';
 
 import '../../config/api_config.dart';
 import '../../services/api_service.dart';
+import '../../services/wallet_service.dart';
 import '../database/database_helper.dart';
 import 'connectivity_service.dart';
+import 'offline_authorization_service.dart';
 
 class OfflineSyncService extends ChangeNotifier {
   final ApiService _apiService;
   final ConnectivityService _connectivityService;
+  final WalletService? _walletService;
   final DatabaseHelper _db = DatabaseHelper.instance;
   final Uuid _uuid = const Uuid();
 
@@ -27,15 +30,24 @@ class OfflineSyncService extends ChangeNotifier {
 
   int get pendingCount => _pendingCount;
   bool get isSyncing => _isSyncing;
-  String? get lastError => _lastError;
+  String? get lastError => _lastError ?? _walletService?.errorMessage;
   Map<String, dynamic>? get lastSyncResult => _lastSyncResult;
 
-  OfflineSyncService(this._apiService, this._connectivityService) {
+  OfflineSyncService(this._apiService, this._connectivityService, {WalletService? walletService})
+      // Keep the public named argument separate from the private dependency.
+      // ignore: prefer_initializing_formals
+      : _walletService = walletService {
     DatabaseHelper.scopeChanges.addListener(_onScopeChanged);
+    _walletService?.addListener(_onWalletChanged);
+    if(_connectivityService.isOnline) unawaited(OfflineAuthorizationService(_apiService).prefetch('SYNC'));
     refreshPendingCount();
 
     // Auto-sync listener: cuando se detecta conexión o reconexión
     _connectivityService.addListener(_onConnectivityChanged);
+  }
+
+  void _onWalletChanged() {
+    refreshPendingCount();
   }
 
   void _onScopeChanged() {
@@ -62,7 +74,9 @@ class OfflineSyncService extends ChangeNotifier {
   Future<int> refreshPendingCount() async {
     final scope = DatabaseHelper.scope;
     if (scope == null || _disposed) return 0;
-    final count = await _db.forScope(scope).getPendingCount();
+    final db = _db.forScope(scope);
+    final count = await db.getPendingCount() +
+        (await db.getPendingOfflineWalletOrders()).length;
     if (!_disposed && scope == DatabaseHelper.scope) { _pendingCount = count; notifyListeners(); }
     return count;
   }
@@ -84,11 +98,13 @@ class OfflineSyncService extends ChangeNotifier {
       throw StateError('Inicia sesión para registrar operaciones');
     }
     final db = _db.forScope(scope);
-    final clientOpId = _uuid.v4();
+    final grant=await OfflineAuthorizationService(_apiService).take('SYNC',online:_connectivityService.isOnline);
+    final clientOpId = grant?['client_operation_id']?.toString() ?? _uuid.v4();
     final now = DateTime.now().toUtc().toIso8601String();
 
     final op = {
       'client_operation_id': clientOpId,
+      'offline_authorization':grant?['authorization'],
       'operation_type': 'VENTA_CONTADO_OFFLINE',
       'sucursal_id': sucursalId,
       'cajero_id': cajeroId ?? scope.split(':').last,
@@ -132,11 +148,13 @@ class OfflineSyncService extends ChangeNotifier {
       throw StateError('Inicia sesión para registrar operaciones');
     }
     final db = _db.forScope(scope);
-    final clientOpId = _uuid.v4();
+    final grant=await OfflineAuthorizationService(_apiService).take('SYNC',online:_connectivityService.isOnline);
+    final clientOpId = grant?['client_operation_id']?.toString() ?? _uuid.v4();
     final now = DateTime.now().toUtc().toIso8601String();
 
     final op = {
       'client_operation_id': clientOpId,
+      'offline_authorization':grant?['authorization'],
       'operation_type': 'RESERVA_OFFLINE',
       'sucursal_id': sucursalId,
       'cliente_id': clienteId ?? scope.split(':').last,
@@ -176,7 +194,7 @@ class OfflineSyncService extends ChangeNotifier {
   }
 
   static Map<String,dynamic> payload(Map<String,dynamic> op) => {
-    'client_operation_id':op['client_operation_id'], 'operation_type':op['operation_type'],
+    'client_operation_id':op['client_operation_id'], 'offline_authorization':op['offline_authorization'], 'operation_type':op['operation_type'],
     'sucursal_id':op['sucursal_id'], 'cajero_id':op['cajero_id'], 'cliente_id':op['cliente_id'],
     'fecha_local':op['fecha_local'], 'monto_total':op['monto_total'],
     'fecha_hora_esperada':op['fecha_hora_esperada'], 'codigo_cupon':op['codigo_cupon'],
@@ -196,9 +214,13 @@ class OfflineSyncService extends ChangeNotifier {
     notifyListeners();
     final db = _db.forScope(scope);
     try {
+      // Keep the wallet's signed protocol and mutex; never send it as a cash sale.
+      final walletSynced = _walletService == null ||
+          await _walletService.syncOfflineWalletOrders(force: force);
+      if (_disposed || scope != DatabaseHelper.scope) return false;
       final pending = (await db.getPendingOperations()).take(100).toList();
       if (_disposed || scope != DatabaseHelper.scope) return false;
-      if (pending.isEmpty) return true;
+      if (pending.isEmpty) return walletSynced;
       final response = await _apiService.postAuth(ApiConfig.syncBatchUrl, {'operations':pending.map(payload).toList()}, null, scope);
       if (_disposed || scope != DatabaseHelper.scope) return false;
       if (!response.success || response.data is! Map) {
@@ -211,8 +233,10 @@ class OfflineSyncService extends ChangeNotifier {
       await db.applySyncResults(pending,result);
       if (_disposed || scope != DatabaseHelper.scope) return false;
       _lastSyncResult = result; _failures = 0;
-      if ((result['results'] as List).any((r) => r['status']=='REINTENTAR') || (await db.getPendingOperations()).isNotEmpty) _retry(scope);
-      return true;
+      final review=(result['results'] as List).any((r)=>r['requires_review']==true);
+      if(review) {_paused=true;_lastError='REVISION_REQUERIDA: pendientes conservados; revisa la autorización contractual';}
+      else if ((result['results'] as List).any((r) => r['status']=='REINTENTAR') || (await db.getPendingOperations()).isNotEmpty) { _retry(scope); }
+      return walletSynced;
     } catch (e) {
       if (!_disposed && scope == DatabaseHelper.scope) { _lastError = 'Pendientes conservados: $e'; _retry(scope); }
       return false;
@@ -257,6 +281,7 @@ class OfflineSyncService extends ChangeNotifier {
     _disposed = true;
     _retryTimer?.cancel();
     DatabaseHelper.scopeChanges.removeListener(_onScopeChanged);
+    _walletService?.removeListener(_onWalletChanged);
     _connectivityService.removeListener(_onConnectivityChanged);
     super.dispose();
   }

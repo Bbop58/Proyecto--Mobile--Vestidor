@@ -682,7 +682,7 @@ class _CartScreenState extends State<CartScreen> {
             children: [
               Text(
                 isOfflineQueued
-                    ? 'Tu compra ha sido pagada exitosamente usando tus fondos locales en SQLite.'
+                    ? 'Tu compra quedó pendiente de confirmación del servidor. El importe está reservado localmente y se enviará al recuperar la conexión.'
                     : 'Tu compra ha sido procesada y registrada en el servidor central.',
                 style: TextStyle(color: AppTheme.getTextSecondary(ctx)),
               ),
@@ -703,8 +703,8 @@ class _CartScreenState extends State<CartScreen> {
                       style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0070BA), fontSize: 13),
                     ),
                     const SizedBox(height: 4),
-                    Text('Total Pagado: Bs. ${total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12)),
-                    Text('Nuevo Saldo Billetera: Bs. ${(saldoActual - total).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.successColor)),
+                    Text('${isOfflineQueued ? 'Importe pendiente' : 'Total pagado'}: Bs. ${total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12)),
+                    Text('${isOfflineQueued ? 'Saldo disponible local' : 'Nuevo saldo billetera'}: Bs. ${(saldoActual - total).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.successColor)),
                   ],
                 ),
               ),

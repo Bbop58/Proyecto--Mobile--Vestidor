@@ -18,7 +18,10 @@ class _Api extends ApiService {
  _Api():super(StorageService());
  int posts=0;
  final response=Completer<ApiResponse>();
- @override Future<ApiResponse> postAuth(String url,[Map<String,dynamic>? body,Duration? timeout,String? expectedScope]) { posts++;return response.future; }
+ @override Future<ApiResponse> postAuth(String url,[Map<String,dynamic>? body,Duration? timeout,String? expectedScope]) {
+  if(url.endsWith('/authorizations')) return Future.value(ApiResponse(success:true,statusCode:200,data:{'grants':[]}));
+  posts++;return response.future;
+ }
 }
 void main() {
  TestWidgetsFlutterBinding.ensureInitialized();
@@ -51,6 +54,13 @@ void main() {
   api.response.complete(ApiResponse(success:false,statusCode:401,error:'expired'));
   expect(await sync.syncBatchNow(),false);expect(await sync.syncBatchNow(),false);
   expect(api.posts,1);expect(await db.getPendingCount(),1);
+ });
+ test('review-required response preserves pending and pauses automatic attempts',() async {
+  api.response.complete(ApiResponse(success:true,statusCode:200,data:{'results':[
+   {'client_operation_id':'one','status':'REINTENTAR','requires_review':true}]}));
+  expect(await sync.syncBatchNow(),true);expect(await db.getPendingCount(),1);
+  expect(sync.lastError,contains('REVISION_REQUERIDA'));
+  expect(await sync.syncBatchNow(),false);expect(api.posts,1);
  });
  test('partial response preserves pending and reports an actionable error',() async {
   api.response.complete(ApiResponse(success:true,statusCode:200,data:{'results':[]}));

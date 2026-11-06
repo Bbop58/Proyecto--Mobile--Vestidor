@@ -35,13 +35,23 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
   }
 
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if(oldVersion<7) {
+      await _createAuthorizationTables(db);
+      for(final table in ['pending_operations','offline_wallet_orders']) {
+        final columns=await db.rawQuery('PRAGMA table_info($table)');
+        if(columns.isNotEmpty && !columns.any((row)=>row['name']=='offline_authorization')) {
+          await db.execute('ALTER TABLE $table ADD COLUMN offline_authorization TEXT');
+        }
+      }
+    }
+
     if(oldVersion<6) {
       await _createFavoriteTables(db);
       final columns=await db.rawQuery('PRAGMA table_info(cached_products)');
@@ -98,6 +108,29 @@ class DatabaseHelper {
     }
   }
 
+  Future<void> _createAuthorizationTables(Database db) async {
+    await db.execute('CREATE TABLE IF NOT EXISTS offline_authorizations (client_operation_id TEXT PRIMARY KEY, channel TEXT NOT NULL, authorization TEXT NOT NULL, expires_at TEXT NOT NULL)');
+  }
+
+  Future<void> cacheAuthorizations(List<Map<String,dynamic>> grants) async {
+    final db=await database;
+    await db.transaction((txn) async {
+      for(final grant in grants) {await txn.insert('offline_authorizations',grant,conflictAlgorithm:ConflictAlgorithm.ignore);}
+    });
+  }
+
+  Future<Map<String,dynamic>?> takeAuthorization(String channel) async {
+    final db=await database;
+    return db.transaction((txn) async {
+      final rows=await txn.query('offline_authorizations',where:'channel=?',whereArgs:[channel]);
+      for(final row in rows) {
+        await txn.delete('offline_authorizations',where:'client_operation_id=?',whereArgs:[row['client_operation_id']]);
+        if(DateTime.tryParse(row['expires_at'].toString())?.isAfter(DateTime.now().toUtc())==true) return Map<String,dynamic>.from(row);
+      }
+      return null;
+    });
+  }
+
   Future<void> _createFavoriteTables(Database db) async {
     await db.execute('CREATE TABLE IF NOT EXISTS favorite_mutations (product_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, desired INTEGER NOT NULL, revision TEXT NOT NULL, product_json TEXT NOT NULL)');
     await db.execute('''
@@ -143,6 +176,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS offline_wallet_orders (
         client_operation_id TEXT PRIMARY KEY,
+        offline_authorization TEXT,
         cliente_id TEXT,
         sucursal_id TEXT NOT NULL,
         monto_total REAL NOT NULL,
@@ -191,6 +225,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE pending_operations (
         client_operation_id TEXT PRIMARY KEY,
+        offline_authorization TEXT,
         operation_type TEXT NOT NULL,
         sucursal_id TEXT NOT NULL,
         cajero_id TEXT,
@@ -217,6 +252,7 @@ class DatabaseHelper {
 
     await _createWalletTables(db);
     await _createFavoriteTables(db);
+    await _createAuthorizationTables(db);
   }
 
   // ── SUCURSALES ──

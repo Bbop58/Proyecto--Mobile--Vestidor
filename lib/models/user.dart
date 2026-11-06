@@ -1,5 +1,10 @@
 /// Modelo de usuario que refleja el schema del backend
 class User {
+  final String accessScope;
+  final bool isPlatformAdmin;
+  bool get canUseMobile => accessScope=='COMPANY' && !isPlatformAdmin;
+  final bool serviceRestricted;
+  final Map<String,bool> subscriptionCapabilities;
   final String id;
   final String? tenantId;
   final String email;
@@ -10,6 +15,10 @@ class User {
 
   User({
     required this.id,
+    this.accessScope='COMPANY',
+    this.isPlatformAdmin=false,
+    this.serviceRestricted=false,
+    this.subscriptionCapabilities=const {},
     this.tenantId,
     required this.email,
     required this.fullName,
@@ -21,6 +30,10 @@ class User {
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['id']?.toString() ?? '',
+      accessScope:json['access_scope']?.toString() ?? 'COMPANY',
+      isPlatformAdmin:json['is_platform_admin']==true,
+      serviceRestricted:json['service_restricted']==true,
+      subscriptionCapabilities:Map<String,dynamic>.from(json['subscription_capabilities'] as Map? ?? {}).map((k,v)=>MapEntry(k,v==true)),
       tenantId: json['tenant_id']?.toString(),
       email: json['email']?.toString() ?? '',
       fullName: json['full_name']?.toString() ?? '',
@@ -33,6 +46,10 @@ class User {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'access_scope':accessScope,
+      'is_platform_admin':isPlatformAdmin,
+      'service_restricted':serviceRestricted,
+      'subscription_capabilities':subscriptionCapabilities,
       'tenant_id': tenantId,
       'email': email,
       'full_name': fullName,
@@ -52,6 +69,10 @@ class User {
   }) {
     return User(
       id: id ?? this.id,
+      accessScope:accessScope,
+      isPlatformAdmin:isPlatformAdmin,
+      serviceRestricted:serviceRestricted,
+      subscriptionCapabilities:subscriptionCapabilities,
       tenantId: tenantId,
       email: email ?? this.email,
       fullName: fullName ?? this.fullName,

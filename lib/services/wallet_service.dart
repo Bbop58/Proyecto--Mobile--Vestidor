@@ -10,6 +10,7 @@ import 'api_service.dart';
 import 'storage_service.dart';
 import '../core/services/connectivity_service.dart';
 import '../core/database/database_helper.dart';
+import '../core/services/offline_authorization_service.dart';
 
 class WalletService extends ChangeNotifier {
   final ApiService _apiService;
@@ -54,6 +55,7 @@ class WalletService extends ChangeNotifier {
   }
 
   Future<void> _reconnect() async {
+    unawaited(OfflineAuthorizationService(_apiService).prefetch('WALLET'));
     await syncOfflineWalletOrders();
     if (!_disposed) await fetchWallet(silent: true);
   }
@@ -92,7 +94,8 @@ class WalletService extends ChangeNotifier {
           await db.saveLocalWallet(userId:user, saldo:central.saldoActual,
             saldoRetenido:central.saldoRetenido, nonce:central.nonceSecuencia,
             firma:central.firmaBalance, moneda:central.moneda);
-          if (!_disposed && scope == DatabaseHelper.scope) _paused = false;
+          unawaited(OfflineAuthorizationService(_apiService).prefetch('WALLET'));
+          if (!_disposed && scope == DatabaseHelper.scope && _errorMessage?.startsWith('REVISION_REQUERIDA')!=true) _paused = false;
         } else if ([401,403,409].contains(res.statusCode)) {
           await db.invalidateWallet(user);
           if (scope == DatabaseHelper.scope && !_disposed) {
@@ -183,10 +186,11 @@ class WalletService extends ChangeNotifier {
     if (!totalAmount.isFinite || totalAmount <= 0 || (currentWallet.saldoDisponible*100).round() < (totalAmount*100).round()) {
       throw Exception('Saldo disponible insuficiente');
     }
-    final clientOpId = _uuid.v4();
+    final grant=_connectivity.isOnline?null:await OfflineAuthorizationService(_apiService).take('WALLET',online:false);
+    final clientOpId = grant?['client_operation_id']?.toString() ?? _uuid.v4();
     final nowIso = DateTime.now().toUtc().toIso8601String();
     await db.recordWalletOrder({
-      'client_operation_id': clientOpId, 'cliente_id': userId, 'sucursal_id': sucursalId,
+      'client_operation_id': clientOpId, 'offline_authorization':grant?['authorization'], 'cliente_id': userId, 'sucursal_id': sucursalId,
       'monto_total': totalAmount, 'codigo_cupon': codigoCupon,
       'nonce_usado': currentWallet.nonceSecuencia, 'firma_usada': currentWallet.firmaBalance,
       'items_json': jsonEncode(items), 'fecha_local': nowIso, 'status': 'PENDIENTE',
@@ -198,7 +202,7 @@ class WalletService extends ChangeNotifier {
     await _hydrate(scope,db);
     // A local debit is provisional until this exact operation has a server receipt.
     if (_connectivity.isOnline) {
-      await syncOfflineWalletOrders();
+      await syncOfflineWalletOrders(onlineOperationId:clientOpId);
       if (scope != DatabaseHelper.scope) {
         return {'success': false, 'error': 'La sesión cambió durante el pago'};
       }
@@ -227,18 +231,18 @@ class WalletService extends ChangeNotifier {
     });
   }
 
-  Future<bool> syncOfflineWalletOrders({bool force = false}) async {
+  Future<bool> syncOfflineWalletOrders({bool force = false,String? onlineOperationId}) async {
     final scope = DatabaseHelper.scope;
     if (_disposed || scope == null || !_connectivity.isOnline || _running.contains(scope) || (_paused && !force)) return false;
     _running.add(scope); // Before the first database await.
     if (force) _paused = false;
     final db = _db.forScope(scope);
     try {
-      final pending = (await db.getPendingOfflineWalletOrders()).take(100).toList();
+      final pending = (await db.getPendingOfflineWalletOrders()).where((row)=>onlineOperationId==null || row['client_operation_id']==onlineOperationId).take(100).toList();
       if (_disposed || scope != DatabaseHelper.scope) return false;
       if (pending.isEmpty) return true;
       final ordersPayload = pending.map((row) => {
-        'client_operation_id':row['client_operation_id'], 'sucursal_id':row['sucursal_id'],
+        'client_operation_id':row['client_operation_id'], 'offline_authorization':row['offline_authorization'], 'sucursal_id':row['sucursal_id'],
         'monto_total':row['monto_total'], 'codigo_cupon':row['codigo_cupon'],
         'items':(jsonDecode(row['items_json'] as String) as List).map((i) => {
           'variante_id':i['variante_id'] ?? i['id'], 'cantidad':i['cantidad'] ?? 1,
@@ -246,7 +250,7 @@ class WalletService extends ChangeNotifier {
         'fecha_local':row['fecha_local'], 'nonce':row['nonce_usado'],
         'firma_cliente':row['firma_usada'], 'codigo_autorizacion_offline':row['firma_usada'],
       }).toList();
-      final res = await _apiService.postAuth(ApiConfig.walletSyncOfflineUrl, {'orders':ordersPayload}, null, scope);
+      final res = await _apiService.postAuth(onlineOperationId==null?ApiConfig.walletSyncOfflineUrl:'${ApiConfig.apiUrl}/wallet/pay', onlineOperationId==null?{'orders':ordersPayload}:ordersPayload.single, null, scope);
       if (_disposed || scope != DatabaseHelper.scope) return false;
       if (!res.success || res.data is! Map) {
         _errorMessage = res.error ?? 'No se confirmó la sincronización';
@@ -260,9 +264,11 @@ class WalletService extends ChangeNotifier {
       await _hydrate(scope,db);
       final rejected=(data['results'] as List).where((r)=>r['status']!='CONFIRMADA' && r['status']!='REINTENTAR').toList();
       _errorMessage=rejected.isEmpty?null:'${rejected.length} compra(s) rechazadas. Revisa el historial de sincronización: ${rejected.first['error_detail'] ?? rejected.first['status']}';
+      final review=(data['results'] as List).any((r)=>r['requires_review']==true);
+      if(review) {_paused=true;_errorMessage='REVISION_REQUERIDA: pendientes conservados; revisa autorización contractual';}
       notifyListeners();
       _failures = 0;
-      if ((data['results'] as List).any((r) => r['status']=='REINTENTAR') || (await db.getPendingOfflineWalletOrders()).isNotEmpty) {
+      if (!_paused && ((data['results'] as List).any((r) => r['status']=='REINTENTAR') || (await db.getPendingOfflineWalletOrders()).isNotEmpty)) {
         _scheduleRetry(scope);
       }
       return true;

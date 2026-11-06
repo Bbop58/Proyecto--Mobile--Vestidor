@@ -20,19 +20,35 @@ class _OfflineSyncScreenState extends State<OfflineSyncScreen> {
   bool _isLoading = true;
   OfflineRecoveryService? _recovery;
   String? _loadedOwner;
+  late final OfflineSyncService _sync;
+  int _loadVersion = 0;
 
   @override
   void initState() {
     super.initState();
+    _sync = context.read<OfflineSyncService>();
+    _sync.addListener(_onSyncChanged);
     _loadOperations();
   }
 
-  Future<void> _loadOperations() async {
-    setState(() => _isLoading = true);
+  void _onSyncChanged() {
+    _loadOperations(showLoading: false);
+  }
+
+  @override
+  void dispose() {
+    _sync.removeListener(_onSyncChanged);
+    _loadVersion++;
+    super.dispose();
+  }
+
+  Future<void> _loadOperations({bool showLoading = true}) async {
+    final version = ++_loadVersion;
+    if (showLoading) setState(() => _isLoading = true);
     final syncService = context.read<OfflineSyncService>();
     final owner = DatabaseHelper.scope;
     final list = await syncService.getAllOperations();
-    if (mounted) {
+    if (mounted && version == _loadVersion) {
       setState(() {
         _loadedOwner = owner;
         _operations = owner == DatabaseHelper.scope ? list : [];

@@ -15,6 +15,21 @@ class AuthService extends ChangeNotifier {
   bool _isLoading = false;
   bool _isAuthenticated = false;
   String? _error;
+  bool _platformOnly=false;
+  int _authEpoch=0;
+  bool get platformOnly=>_platformOnly;
+  void dismissPlatformAccess(){_platformOnly=false;_error=null;notifyListeners();}
+
+  Future<bool> _acceptMobileIdentity(dynamic raw) async {
+    if(raw is! Map<String,dynamic>) return true;
+    if(User.fromJson(raw).canUseMobile){_platformOnly=false;return true;}
+    // Clear credentials only: databases, quarantines and previous owners' outboxes stay intact.
+    DatabaseHelper.activateScope(null);
+    await _storageService.clearAll();
+    _currentUser=null;_isAuthenticated=false;_platformOnly=true;
+    _setError('Esta cuenta se gestiona en la web de FashionStore. El panel de plataforma no está disponible en la app móvil.');
+    return false;
+  }
 
   AuthService(this._apiService, this._storageService);
 
@@ -65,6 +80,8 @@ class AuthService extends ChangeNotifier {
     required String fullName,
     required String tenantId,
   }) async {
+    if(_isLoading) return false;
+    final attempt=++_authEpoch;
     _setLoading(true);
     _clearError();
 
@@ -75,10 +92,12 @@ class AuthService extends ChangeNotifier {
         'full_name': fullName,
         'tenant_id': tenantId,
       });
+      if(attempt!=_authEpoch) return false;
 
       if (response.success && response.data != null) {
         final data = response.data;
         if (data is Map<String, dynamic> && data.containsKey('access_token')) {
+          if(!await _acceptMobileIdentity(data['user'])) return false;
           final accessToken = data['access_token'] as String;
           DatabaseHelper.activateScope(null);
           await _storageService.setAccessToken(accessToken);
@@ -96,7 +115,7 @@ class AuthService extends ChangeNotifier {
           } else {
             await _loadProfile();
           }
-          return true;
+          return _isAuthenticated;
         } else {
           // Si el endpoint no retorna token directamente, intenta login
           return await _loginInternal(email: email, password: password);
@@ -116,6 +135,8 @@ class AuthService extends ChangeNotifier {
 
   /// Iniciar sesión
   Future<bool> login({required String email, required String password}) async {
+    if(_isLoading) return false;
+    final attempt=++_authEpoch;
     _setLoading(true);
     _clearError();
 
@@ -123,10 +144,11 @@ class AuthService extends ChangeNotifier {
       return await _loginInternal(email: email, password: password);
     } catch (e) {
       debugPrint('Error en login: $e');
+      if(attempt!=_authEpoch) return false;
       _setError('Error de conexión o de datos: ${e.toString()}');
       return false;
     } finally {
-      _setLoading(false);
+      if(attempt==_authEpoch) _setLoading(false);
     }
   }
 
@@ -135,14 +157,17 @@ class AuthService extends ChangeNotifier {
     required String email,
     required String password,
   }) async {
+    final attempt=_authEpoch;
     final response = await _apiService.post(ApiConfig.loginUrl, {
       'email': email,
       'password': password,
     });
+    if(attempt!=_authEpoch) return false;
 
     if (response.success && response.data != null) {
       final data = response.data;
       if (data is Map<String, dynamic> && data.containsKey('access_token')) {
+        if(!await _acceptMobileIdentity(data['user'])) return false;
         final accessToken = data['access_token'] as String;
         DatabaseHelper.activateScope(null);
         await _storageService.setAccessToken(accessToken);
@@ -160,7 +185,7 @@ class AuthService extends ChangeNotifier {
         } else {
           await _loadProfile();
         }
-        return true;
+        return _isAuthenticated;
       } else {
         _setError('Formato de respuesta del servidor no válido');
         return false;
@@ -173,6 +198,7 @@ class AuthService extends ChangeNotifier {
 
   /// Cerrar sesión
   Future<void> logout() async {
+    ++_authEpoch;
     _setLoading(true);
 
     try {
@@ -194,12 +220,15 @@ class AuthService extends ChangeNotifier {
 
   /// Cargar perfil del usuario actual
   Future<void> _loadProfile() async {
+    final attempt=_authEpoch;
     try {
       final response = await _apiService.getAuth(ApiConfig.profileUrl);
+      if(attempt!=_authEpoch) return;
 
       if (response.success &&
           response.data != null &&
           response.data is Map<String, dynamic>) {
+        if(!await _acceptMobileIdentity(response.data)) return;
         _currentUser = User.fromJson(response.data as Map<String, dynamic>);
         await _activateCompany();
         _isAuthenticated = true;
@@ -234,6 +263,7 @@ class AuthService extends ChangeNotifier {
       if (response.success &&
           response.data != null &&
           response.data is Map<String, dynamic>) {
+        if(!await _acceptMobileIdentity(response.data)) return false;
         _currentUser = User.fromJson(response.data as Map<String, dynamic>);
         return true;
       } else {
@@ -297,7 +327,7 @@ class AuthService extends ChangeNotifier {
 
   Future<void> _activateCompany() async {
     final user = _currentUser;
-    if (user == null || user.tenantId == null) {
+    if (user == null || user.tenantId == null || !user.canUseMobile) {
       throw StateError('La cuenta no tiene empresa');
     }
     await _storageService.setUserId(user.id);

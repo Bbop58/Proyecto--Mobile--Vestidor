@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'screens/auth/platform_access_screen.dart';
 import 'package:provider/provider.dart';
 
 import 'config/routes.dart';
@@ -77,6 +78,22 @@ class MyApp extends StatelessWidget {
             return AuthService(api, storage);
           },
         ),
+        ChangeNotifierProxyProvider3<
+          ApiService,
+          ConnectivityService,
+          StorageService,
+          WalletService
+        >(
+          create: (context) => WalletService(
+            context.read<ApiService>(),
+            context.read<ConnectivityService>(),
+            context.read<StorageService>(),
+          ),
+          update: (_, api, conn, storage, wallet) {
+            if (wallet != null) return wallet;
+            return WalletService(api, conn, storage);
+          },
+        ),
         ChangeNotifierProxyProvider2<
           ApiService,
           ConnectivityService,
@@ -85,10 +102,11 @@ class MyApp extends StatelessWidget {
           create: (context) => OfflineSyncService(
             context.read<ApiService>(),
             context.read<ConnectivityService>(),
+            walletService: context.read<WalletService>(),
           ),
-          update: (_, api, conn, sync) {
+          update: (context, api, conn, sync) {
             if (sync != null) return sync;
-            return OfflineSyncService(api, conn);
+            return OfflineSyncService(api, conn, walletService: context.read<WalletService>());
           },
         ),
         ProxyProvider<ApiService, CategoryService>(
@@ -135,22 +153,6 @@ class MyApp extends StatelessWidget {
           ApiService,
           ConnectivityService,
           StorageService,
-          WalletService
-        >(
-          create: (context) => WalletService(
-            context.read<ApiService>(),
-            context.read<ConnectivityService>(),
-            context.read<StorageService>(),
-          ),
-          update: (_, api, conn, storage, wallet) {
-            if (wallet != null) return wallet;
-            return WalletService(api, conn, storage);
-          },
-        ),
-        ChangeNotifierProxyProvider3<
-          ApiService,
-          ConnectivityService,
-          StorageService,
           FavoriteService
         >(
           create: (context) => FavoriteService(
@@ -174,9 +176,9 @@ class MyApp extends StatelessWidget {
             themeMode: themeService.themeMode,
             home: const AuthWrapper(),
             routes: {
-              AppRoutes.login: (context) => const LoginScreen(),
+              AppRoutes.login: (context) => const AuthWrapper(),
               AppRoutes.register: (context) => const RegisterScreen(),
-              AppRoutes.home: (context) => const MainNavigationScreen(),
+              AppRoutes.home: (context) => const AuthWrapper(),
               AppRoutes.catalog: (context) => const CatalogScreen(),
               AppRoutes.cart: (context) => const CartScreen(),
               AppRoutes.reservations: (context) => const ReservationsScreen(),
@@ -238,7 +240,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
           );
         }
 
-        if (auth.isAuthenticated) {
+        if(auth.platformOnly){return const PlatformAccessScreen();}
+        if (auth.isAuthenticated && auth.currentUser?.canUseMobile==true) {
           return const MainNavigationScreen();
         }
 

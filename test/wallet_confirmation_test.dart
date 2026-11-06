@@ -28,9 +28,10 @@ class _Api extends ApiService {
     data: url.endsWith('/history') ? [] : {'id': 'wallet', 'user_id': 'user', 'saldo_actual': balance,
       'saldo_retenido': held, 'nonce_secuencia': 1, 'firma_balance': 'server-proof', 'moneda': 'BOB'});
   @override Future<ApiResponse> postAuth(String url, [Map<String, dynamic>? body, Duration? timeout, String? expectedScope]) async {
+    if(url.endsWith('/authorizations')) return ApiResponse(success:true,statusCode:200,data:{'grants':[]});
     posts++;
     if (outcome == 'TIMEOUT') return ApiResponse(success: false, statusCode: 504, error: 'unknown result');
-    final id = (body!['orders'] as List).first['client_operation_id'];
+    final id = url.endsWith('/wallet/pay') ? body!['client_operation_id'] : (body!['orders'] as List).first['client_operation_id'];
     if (outcome == 'CONFIRMADA') balance = 10;
     return ApiResponse(success: true, statusCode: 200, data: {'nuevo_saldo':balance,'saldo_retenido':held,'nuevo_nonce':2,'nueva_firma':'verified-after-sync','results': [
       {'client_operation_id': id, 'status': outcome,
