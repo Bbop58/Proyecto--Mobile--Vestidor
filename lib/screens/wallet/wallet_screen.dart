@@ -23,6 +23,7 @@ class _WalletScreenState extends State<WalletScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<WalletService>().fetchWallet();
+      unawaited(context.read<WalletService>().fetchPayPalAvailability());
     });
   }
 
@@ -286,7 +287,7 @@ class _WalletScreenState extends State<WalletScreen> {
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Actualizar saldo',
-            onPressed: () => walletService.fetchWallet(),
+            onPressed: () { walletService.fetchWallet(); unawaited(walletService.fetchPayPalAvailability()); },
           ),
         ],
       ),
@@ -483,12 +484,12 @@ class _WalletScreenState extends State<WalletScreen> {
                         const SizedBox(height: 16),
 
                         ElevatedButton.icon(
-                          onPressed: _isProcessingTopup ? null : _handlePayPalTopup,
+                          onPressed: _isProcessingTopup || !connectivity.isOnline || walletService.paypalAvailable != true ? null : _handlePayPalTopup,
                           icon: _isProcessingTopup
                               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                               : const Icon(Icons.payment_rounded),
                           label: Text(
-                            _isProcessingTopup ? 'Iniciando PayPal...' : 'Recargar con PayPal Sandbox',
+                            _isProcessingTopup ? 'Iniciando PayPal...' : walletService.paypalAvailable == true ? 'Recargar con PayPal' : walletService.paypalAvailable == null ? 'Consultando disponibilidad…' : 'PayPal no disponible para esta empresa',
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                           ),
                           style: ElevatedButton.styleFrom(

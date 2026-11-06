@@ -20,6 +20,35 @@ class WalletService extends ChangeNotifier {
   int _failures = 0;
   bool _paused = false;
   bool _disposed = false;
+  bool? _paypalAvailable;
+  String? _paypalAvailabilityOwner;
+  String? _paypalMode;
+  int _availabilityVersion = 0;
+  bool? get paypalAvailable => _paypalAvailabilityOwner == DatabaseHelper.scope ? _paypalAvailable : null;
+  String? get paypalMode => _paypalAvailabilityOwner == DatabaseHelper.scope ? _paypalMode : null;
+
+  Future<void> fetchPayPalAvailability() async {
+    final owner = DatabaseHelper.scope;
+    final version = ++_availabilityVersion;
+    if (owner == null || _disposed) return;
+    bool available = false;
+    String? mode;
+    try {
+      if (_connectivity.isOnline) {
+        final response = await _apiService.getAuth('${ApiConfig.apiUrl}/payments/paypal/availability');
+        if (response.success && response.data is Map) {
+          available = response.data['enabled'] == true;
+          mode = response.data['mode']?.toString();
+        }
+      }
+    } catch (_) { /* Unknown availability never authorizes a new PayPal charge. */ }
+    if (_disposed || owner != DatabaseHelper.scope || version != _availabilityVersion) return;
+    _paypalAvailabilityOwner = owner;
+    _paypalAvailable = available;
+    _paypalMode = mode;
+    notifyListeners();
+  }
+
   final DatabaseHelper _db = DatabaseHelper.instance;
   final Uuid _uuid = const Uuid();
 
@@ -41,6 +70,9 @@ class WalletService extends ChangeNotifier {
   }
 
   void _onScopeChanged() {
+    _availabilityVersion++;
+    _paypalAvailable = null;
+    _paypalAvailabilityOwner = _paypalMode = null;
     _retryTimer?.cancel();
     _paused = false;
     _isLoading = false;
@@ -55,6 +87,7 @@ class WalletService extends ChangeNotifier {
   }
 
   Future<void> _reconnect() async {
+    unawaited(fetchPayPalAvailability());
     unawaited(OfflineAuthorizationService(_apiService).prefetch('WALLET'));
     await syncOfflineWalletOrders();
     if (!_disposed) await fetchWallet(silent: true);

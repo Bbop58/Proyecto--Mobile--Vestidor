@@ -154,6 +154,14 @@ void main() {
   });
 
   testWidgets('offline screen counts wallet purchase and refreshes history after reconnection', (tester) async {
+    Future<void> waitForScreen(Finder target) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 5));
+      while (target.evaluate().isEmpty && DateTime.now().isBefore(deadline)) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump();
+      }
+      expect(target, findsOneWidget);
+    }
     await tester.runAsync(() async {
       await buyOffline();
       await sync.refreshPendingCount();
@@ -163,19 +171,16 @@ void main() {
       ChangeNotifierProvider<ConnectivityService>.value(value: network),
       ChangeNotifierProvider<OfflineSyncService>.value(value: sync),
       ], child: const MaterialApp(home: OfflineSyncScreen())));
-      await Future<void>.delayed(const Duration(milliseconds: 100));
     });
-    await tester.pump();
-    expect(find.text('1 en cola local'), findsOneWidget);
-    expect(find.text('Compra con billetera'), findsOneWidget);
+    await waitForScreen(find.text('1 en cola local'));
+    await waitForScreen(find.text('Compra con billetera'));
     await tester.runAsync(() async {
       network.reconnect();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
     });
-    await tester.pump();
+    // Wait for observable synchronization, not a machine-dependent 100ms delay.
     // Reconnection updates the already open history, without leaving the page.
-    expect(find.text('0 en cola local'), findsOneWidget);
-    expect(find.text('Sincronizada'), findsOneWidget);
+    await waitForScreen(find.text('0 en cola local'));
+    await waitForScreen(find.text('Sincronizada'));
     expect(api.posts, 1);
     await tester.pumpWidget(const SizedBox.shrink());
   });

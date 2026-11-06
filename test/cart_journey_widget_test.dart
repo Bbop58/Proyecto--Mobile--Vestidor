@@ -57,6 +57,8 @@ class _Branches extends BranchService {
 }
 
 class _Wallet extends WalletService {
+  @override bool? get paypalAvailable => true;
+  @override Future<void> fetchPayPalAvailability() async {}
   _Wallet(super.api, super.connectivity, super.storage);
   @override
   Future<void> fetchWallet({bool silent = false}) async {}

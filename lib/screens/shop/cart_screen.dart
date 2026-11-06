@@ -138,6 +138,7 @@ class _CartScreenState extends State<CartScreen> {
     _loadBranches();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<WalletService>().fetchWallet(silent: true);
+      unawaited(context.read<WalletService>().fetchPayPalAvailability());
     });
   }
 
@@ -1069,6 +1070,7 @@ class _CartScreenState extends State<CartScreen> {
     final accent = AppTheme.getAccent(context);
     final border = AppTheme.getBorder(context);
     final cart = context.watch<CartService>();
+    final paypalReady = context.watch<ConnectivityService>().isOnline && context.watch<WalletService>().paypalAvailable == true;
     _invalidateStaleCoupon();
 
     return Scaffold(
@@ -1650,7 +1652,7 @@ class _CartScreenState extends State<CartScreen> {
 
                 // Botón 1: Comprar Online Directo con PayPal
                 ElevatedButton.icon(
-                  onPressed: _isSubmitting ? null : _handleDirectPurchase,
+                  onPressed: _isSubmitting || !paypalReady ? null : _handleDirectPurchase,
                   icon: _isSubmitting
                       ? const SizedBox(
                           width: 18,
@@ -1659,7 +1661,7 @@ class _CartScreenState extends State<CartScreen> {
                         )
                       : const Icon(Icons.payment_rounded),
                   label: Text(
-                    _isSubmitting ? 'Iniciando PayPal...' : 'Pagar Directo con PayPal',
+                    _isSubmitting ? 'Iniciando PayPal...' : paypalReady ? 'Pagar Directo con PayPal' : 'PayPal no disponible',
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                   ),
                   style: ElevatedButton.styleFrom(
