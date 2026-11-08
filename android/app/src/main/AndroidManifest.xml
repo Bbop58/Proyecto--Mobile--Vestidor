@@ -8,6 +8,8 @@
     <application
         android:label="ficcstore"
         android:name="${applicationName}"
+        android:fullBackupContent="@xml/auth_backup_rules"
+        android:dataExtractionRules="@xml/auth_data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
         <activity

@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+
 import 'screens/auth/platform_access_screen.dart';
+
 import 'package:provider/provider.dart';
 
 import 'config/routes.dart';
@@ -15,6 +18,7 @@ import 'screens/shop/virtual_fitting_screen.dart';
 import 'screens/reservations/reservations_screen.dart';
 import 'services/api_service.dart';
 import 'services/auth_service.dart';
+import 'services/mobile_session_service.dart';
 import 'services/branch_service.dart';
 import 'services/cart_service.dart';
 import 'services/category_service.dart';
@@ -30,6 +34,9 @@ import 'services/notification_service.dart';
 import 'services/local_notification_service.dart';
 import 'core/services/connectivity_service.dart';
 import 'core/services/offline_sync_service.dart';
+import 'core/services/session_lifecycle_service.dart';
+import 'core/services/offline_authorization_service.dart';
+import 'core/database/database_helper.dart';
 import 'screens/offline/offline_sync_screen.dart';
 import 'services/chatbot_service.dart';
 import 'services/tts_service.dart';
@@ -58,14 +65,19 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         Provider<StorageService>(create: (_) => StorageService()),
+        ChangeNotifierProvider<MobileSessionService>(
+          create: (context) =>
+              MobileSessionService(context.read<StorageService>()),
+        ),
         ChangeNotifierProvider<ConnectivityService>(
           create: (_) => ConnectivityService(),
         ),
         ChangeNotifierProvider<ThemeService>(
           create: (context) => ThemeService(context.read<StorageService>()),
         ),
-        ProxyProvider<StorageService, ApiService>(
-          update: (_, storage, _) => ApiService(storage),
+        ProxyProvider2<StorageService, MobileSessionService, ApiService>(
+          update: (_, storage, sessions, previous) =>
+              previous ?? ApiService(storage, sessions: sessions),
           dispose: (_, api) => api.dispose(),
         ),
         ChangeNotifierProxyProvider2<ApiService, StorageService, AuthService>(
@@ -106,7 +118,11 @@ class MyApp extends StatelessWidget {
           ),
           update: (context, api, conn, sync) {
             if (sync != null) return sync;
-            return OfflineSyncService(api, conn, walletService: context.read<WalletService>());
+            return OfflineSyncService(
+              api,
+              conn,
+              walletService: context.read<WalletService>(),
+            );
           },
         ),
         ProxyProvider<ApiService, CategoryService>(
@@ -206,12 +222,42 @@ class AuthWrapper extends StatefulWidget {
   State<AuthWrapper> createState() => _AuthWrapperState();
 }
 
-class _AuthWrapperState extends State<AuthWrapper> {
+class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
+  SessionLifecycleService? _lifecycle;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_lifecycle?.resume() ?? Future.value());
+  }
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _lifecycle?.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
     Future.microtask(() {
       if (mounted) {
+        final api = context.read<ApiService>();
+        _lifecycle = SessionLifecycleService(api,context.read<ConnectivityService>(),onReady:() async {
+          final sync = context.read<OfflineSyncService>();
+          final wallet = context.read<WalletService>();
+          final favorites = context.read<FavoriteService>();
+          final owner = DatabaseHelper.scope;
+          final generation = api.sessionCoordinator?.generation;
+          bool current() => mounted && owner == DatabaseHelper.scope && generation == api.sessionCoordinator?.generation;
+          await sync.syncBatchNow();
+          if (!current()) return;
+          await wallet.fetchWallet(silent:true);
+          if (!current()) return;
+          await OfflineAuthorizationService(api).prefetch('SYNC');
+          if (!current()) return;
+          await favorites.fetchFavorites();
+        });
+        WidgetsBinding.instance.addObserver(this);
+        _lifecycle!.start();
         context.read<AuthService>().initialize();
       }
     });
@@ -240,8 +286,39 @@ class _AuthWrapperState extends State<AuthWrapper> {
           );
         }
 
-        if(auth.platformOnly){return const PlatformAccessScreen();}
-        if (auth.isAuthenticated && auth.currentUser?.canUseMobile==true) {
+        if (auth.platformOnly) {
+          return const PlatformAccessScreen();
+        }
+        if (auth.sessionRecoveryNeeded) {
+          return Scaffold(
+            body: SafeArea(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.lock_clock_outlined, size: 40),
+                      const SizedBox(height: 16),
+                      Text(
+                        auth.sessionRecoveryMessage,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      FilledButton(
+                        onPressed: auth.isLoading
+                            ? null
+                            : () => auth.retrySession(),
+                        child: const Text('Reintentar'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+        if (auth.isAuthenticated && auth.currentUser?.canUseMobile == true) {
           return const MainNavigationScreen();
         }
 

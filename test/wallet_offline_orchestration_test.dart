@@ -63,6 +63,8 @@ void main() {
     DatabaseHelper.activateScope('tenant-${DateTime.now().microsecondsSinceEpoch}:user');
     db = DatabaseHelper.instance.forScope(DatabaseHelper.scope!);
     await db.saveLocalWallet(userId: 'user', saldo: 290, nonce: 4, firma: 'proof');
+    await db.cacheAuthorizations([{'client_operation_id':'qa-round-wallet','channel':'WALLET',
+      'authorization':'qa-contract-permit','expires_at':DateTime.now().toUtc().add(const Duration(hours:1)).toIso8601String()}]);
     api = _Api(); network = _Network();
     wallet = WalletService(api, network, StorageService());
     sync = OfflineSyncService(api, network, walletService: wallet);

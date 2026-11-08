@@ -1,338 +1,232 @@
 import 'dart:convert';
 
-import '../core/database/database_helper.dart';
-
-import 'dart:io';
-
 import 'package:http/http.dart' as http;
 
-import 'storage_service.dart';
+import '../core/database/database_helper.dart';
 import '../config/api_config.dart';
+import '../models/mobile_session.dart';
+import 'storage_service.dart';
+import 'mobile_session_service.dart';
 
-/// Cliente HTTP base con inyección automática de JWT
+/// HTTP boundary: preserve owner/generation, renew access, never replay money implicitly.
 class ApiService {
   final StorageService _storageService;
   final http.Client _client;
-
-  ApiService(this._storageService, {http.Client? client})
-    : _client = client ?? http.Client();
-
-  /// Headers base con Content-Type JSON
-  Map<String, String> get _baseHeaders => {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  };
-
-  /// Headers con token de autorización
-  Future<Map<String, String>> _authHeaders() async {
-    final token = await _storageService.getAccessToken();
-    final headers = Map<String, String>.from(_baseHeaders);
-    if (token != null) {
-      headers['Authorization'] = 'Bearer $token';
+  MobileSessionService? _sessions;
+  bool _ownsSessions = false;
+  // Keep the public injection name separate from the private implementation field.
+  ApiService(
+    this._storageService, {
+    http.Client? client,
+    MobileSessionService? sessions,
+  }) : _client = client ?? http.Client(),
+       // Public injection name intentionally differs from the private field.
+       // ignore: prefer_initializing_formals
+       _sessions = sessions;
+  MobileSessionService get sessions {
+    if (_sessions == null) {
+      _sessions = MobileSessionService(_storageService, client: _client);
+      _ownsSessions = true;
     }
-    return headers;
+    return _sessions!;
   }
 
-  /// GET público: incluye identidad cuando existe para respetar la empresa
-  Future<ApiResponse> get(String url) async {
+  MobileSessionService? get sessionCoordinator => _sessions;
+
+  /// Queue transport barrier. Connectivity is not proof of a valid session.
+  Future<bool> prepareSession({required String expectedScope, bool revalidate = true}) async {
+    final coordinator = _sessions;
+    final generation = coordinator?.generation;
+    if (DatabaseHelper.scope != expectedScope) return false;
+    if (coordinator == null) return true; // Legacy clients/test doubles retain their contract.
     try {
-      final scope = DatabaseHelper.scope;
-      final headers = await _authHeaders();
-      if (scope != DatabaseHelper.scope) {
+      final ready = revalidate ? await coordinator.revalidate()
+        : coordinator.hasIdentity && coordinator.state == SessionState.online;
+      return ready && DatabaseHelper.scope == expectedScope && generation == coordinator.generation;
+    } catch (_) { return false; }
+  }
+
+  Future<ApiResponse> _request(
+    String method,
+    String url, {
+    Map<String, dynamic>? body,
+    bool authenticated = true,
+    bool optional = false,
+    Duration? timeout,
+    String? expectedScope,
+  }) async {
+    final scope = expectedScope ?? DatabaseHelper.scope;
+    final coordinator = _sessions;
+    final generation = coordinator?.generation;
+    bool current() =>
+        scope == DatabaseHelper.scope &&
+        (coordinator == null || generation == coordinator.generation);
+    ApiResponse changed() =>
+        ApiResponse(success: false, statusCode: 401, error: 'La sesión cambió');
+    if (!current()) return changed();
+    if (coordinator != null &&
+        authenticated &&
+        Uri.parse(url).origin != Uri.parse(ApiConfig.baseUrl).origin) {
+      return ApiResponse(
+        success: false,
+        statusCode: 0,
+        error: 'No se enviaron credenciales a un servidor diferente.',
+      );
+    }
+    try {
+      String? token;
+      if (authenticated) {
+        token = coordinator != null
+            ? await coordinator.accessToken()
+            : await _storageService.getAccessToken();
+      }
+      if (!current()) return changed();
+      if (authenticated && !optional && token == null && coordinator != null) {
         return ApiResponse(
           success: false,
           statusCode: 401,
-          error: 'La sesión cambió',
+          error: 'Inicia sesión para continuar.',
         );
       }
-      final response = await _client
-          .get(Uri.parse(url), headers: headers)
-          .timeout(ApiConfig.connectionTimeout);
-      if (scope != DatabaseHelper.scope) {
-        return ApiResponse(
-          success: false,
-          statusCode: 401,
-          error: 'La sesión cambió',
+      Future<http.Response> send(String? access) async {
+        final request = http.Request(method, Uri.parse(url))
+          ..followRedirects = false;
+        request.headers.addAll({
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          if (access != null) 'Authorization': 'Bearer $access',
+        });
+        if (body != null) request.body = jsonEncode(body);
+        return http.Response.fromStream(await _client.send(request));
+      }
+
+      var response = await send(token)
+          .timeout(timeout ?? ApiConfig.connectionTimeout);
+      if (!current()) return changed();
+      if (response.statusCode == 401 && coordinator != null && token != null) {
+        final renewed = await coordinator.accessToken(
+          forceRefresh: true,
+          rejectedAccessToken: token,
         );
+        if (!current()) return changed();
+        if (renewed != null && (method == 'GET' || method == 'HEAD')) {
+          response = await send(renewed)
+              .timeout(timeout ?? ApiConfig.connectionTimeout);
+          if (!current()) return changed();
+        } else if (renewed != null) {
+          return ApiResponse(
+            success: false,
+            statusCode: 401,
+            error: 'La sesión se renovó. Vuelve a intentar la operación.',
+            data: {
+              'detail': {'code': 'SESSION_RENEWED_RETRY_REQUIRED'},
+            },
+          );
+        }
       }
       return _handleResponse(response);
-    } on SocketException {
+    } on SessionFailure catch (error) {
+      if (!current()) return changed();
       return ApiResponse(
         success: false,
-        statusCode: 0,
-        error: 'Sin conexión a internet. Verifica tu red.',
+        statusCode: error.statusCode,
+        error: error.message,
+        data: {
+          'detail': {'code': error.code},
+        },
       );
-    } catch (e) {
+    } on SessionStorageException {
       return ApiResponse(
         success: false,
         statusCode: 0,
-        error: 'Error de conexión: ${e.toString()}',
+        error: const SessionStorageException().toString(),
+      );
+    } catch (_) {
+      return ApiResponse(
+        success: false,
+        statusCode: 0,
+        error: 'No se pudo conectar con el servidor. Reintenta.',
       );
     }
   }
 
-  /// POST request (sin auth)
-  Future<ApiResponse> post(String url, Map<String, dynamic> body) async {
-    try {
-      final response = await _client
-          .post(Uri.parse(url), headers: _baseHeaders, body: jsonEncode(body))
-          .timeout(ApiConfig.connectionTimeout);
-      return _handleResponse(response);
-    } on SocketException {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Sin conexión a internet. Verifica tu red.',
-      );
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Error de conexión: ${e.toString()}',
-      );
-    }
-  }
-
-  /// POST request (con auth)
+  Future<ApiResponse> get(String url) => _request('GET', url, optional: true);
+  Future<ApiResponse> getAuth(String url) => _request('GET', url);
+  Future<ApiResponse> post(String url, Map<String, dynamic> body) =>
+      _request('POST', url, body: body, authenticated: false);
   Future<ApiResponse> postAuth(
     String url, [
     Map<String, dynamic>? body,
     Duration? timeout,
     String? expectedScope,
-  ]) async {
-    try {
-      final scope = expectedScope ?? DatabaseHelper.scope;
-      final headers = await _authHeaders();
-      if (scope != DatabaseHelper.scope) {
-        return ApiResponse(
-          success: false,
-          statusCode: 401,
-          error: 'La sesión cambió',
-        );
-      }
-      final response = await _client
-          .post(
-            Uri.parse(url),
-            headers: headers,
-            body: body != null ? jsonEncode(body) : null,
-          )
-          .timeout(timeout ?? ApiConfig.connectionTimeout);
-      if (scope != DatabaseHelper.scope) {
-        return ApiResponse(
-          success: false,
-          statusCode: 401,
-          error: 'La sesión cambió',
-        );
-      }
-      return _handleResponse(response);
-    } on SocketException {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Sin conexión a internet. Verifica tu red.',
-      );
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Error de conexión: ${e.toString()}',
-      );
-    }
-  }
-
-  /// POST form-urlencoded (para login OAuth2)
+  ]) => _request(
+    'POST',
+    url,
+    body: body,
+    timeout: timeout,
+    expectedScope: expectedScope,
+  );
+  Future<ApiResponse> putAuth(String url, Map<String, dynamic> body) =>
+      _request('PUT', url, body: body);
+  Future<ApiResponse> deleteAuth(String url) => _request('DELETE', url);
+  Future<ApiResponse> patchAuth(String url, [Map<String, dynamic>? body]) =>
+      _request('PATCH', url, body: body);
   Future<ApiResponse> postForm(String url, Map<String, String> body) async {
     try {
-      final response = await _client
-          .post(
-            Uri.parse(url),
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'Accept': 'application/json',
-            },
-            body: body,
-          )
-          .timeout(ApiConfig.connectionTimeout);
+      final request = http.Request('POST', Uri.parse(url))
+        ..followRedirects = false;
+      request.bodyFields = body;
+      final response = await http.Response.fromStream(
+        await _client.send(request),
+      ).timeout(ApiConfig.connectionTimeout);
       return _handleResponse(response);
-    } on SocketException {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Sin conexión a internet. Verifica tu red.',
-      );
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Error de conexión: ${e.toString()}',
-      );
-    }
-  }
-
-  /// GET request (con auth)
-  Future<ApiResponse> getAuth(String url) async {
-    try {
-      final scope = DatabaseHelper.scope;
-      final headers = await _authHeaders();
-      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
-      final response = await _client
-          .get(Uri.parse(url), headers: headers)
-          .timeout(ApiConfig.connectionTimeout);
-      if (scope != DatabaseHelper.scope) {
-        return ApiResponse(
-          success: false,
-          statusCode: 401,
-          error: 'La sesión cambió',
-        );
-      }
-      return _handleResponse(response);
-    } on SocketException {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Sin conexión a internet. Verifica tu red.',
-      );
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Error de conexión: ${e.toString()}',
-      );
-    }
-  }
-
-  /// PUT request (con auth)
-  Future<ApiResponse> putAuth(String url, Map<String, dynamic> body) async {
-    try {
-      final scope = DatabaseHelper.scope;
-      final headers = await _authHeaders();
-      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
-      final response = await _client
-          .put(Uri.parse(url), headers: headers, body: jsonEncode(body))
-          .timeout(ApiConfig.connectionTimeout);
-      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
-      return _handleResponse(response);
-    } on SocketException {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Sin conexión a internet. Verifica tu red.',
-      );
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Error de conexión: ${e.toString()}',
-      );
-    }
-  }
-
-  /// DELETE request (con auth)
-  Future<ApiResponse> deleteAuth(String url) async {
-    try {
-      final scope = DatabaseHelper.scope;
-      final headers = await _authHeaders();
-      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
-      final response = await _client
-          .delete(Uri.parse(url), headers: headers)
-          .timeout(ApiConfig.connectionTimeout);
-      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
-      return _handleResponse(response);
-    } on SocketException {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Sin conexión a internet. Verifica tu red.',
-      );
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Error de conexión: ${e.toString()}',
-      );
-    }
-  }
-
-  /// PATCH request (con auth)
-  Future<ApiResponse> patchAuth(
-    String url, [
-    Map<String, dynamic>? body,
-  ]) async {
-    try {
-      final scope = DatabaseHelper.scope;
-      final headers = await _authHeaders();
-      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
-      final response = await _client
-          .patch(
-            Uri.parse(url),
-            headers: headers,
-            body: body != null ? jsonEncode(body) : null,
-          )
-          .timeout(ApiConfig.connectionTimeout);
-      if(scope!=DatabaseHelper.scope) { return ApiResponse(success:false,statusCode:401,error:'La sesión cambió'); }
-      return _handleResponse(response);
-    } on SocketException {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Sin conexión a internet. Verifica tu red.',
-      );
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        statusCode: 0,
-        error: 'Error de conexión: ${e.toString()}',
-      );
-    }
-  }
-
-  /// Manejo centralizado de respuestas
-  ApiResponse _handleResponse(http.Response response) {
-    final statusCode = response.statusCode;
-    dynamic data;
-
-    try {
-      data = jsonDecode(response.body);
     } catch (_) {
-      data = response.body;
+      return ApiResponse(
+        success: false,
+        statusCode: 0,
+        error: 'No se pudo conectar con el servidor.',
+      );
     }
+  }
 
-    if (statusCode >= 200 && statusCode < 300) {
-      return ApiResponse(success: true, statusCode: statusCode, data: data);
+  ApiResponse _handleResponse(http.Response response) {
+    dynamic data;
+    try {
+      data = jsonDecode(utf8.decode(response.bodyBytes));
+    } catch (_) {
+      data = null;
     }
-
-    // Extraer mensaje de error del backend
-    String errorMessage;
-    if (data is Map<String, dynamic>) {
-      errorMessage =
-          data['detail']?.toString() ??
-          data['message']?.toString() ??
-          'Error desconocido';
-    } else {
-      errorMessage = 'Error del servidor ($statusCode)';
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return ApiResponse(
+        success: true,
+        statusCode: response.statusCode,
+        data: data,
+      );
     }
-
+    final detail = data is Map ? data['detail'] : null;
     return ApiResponse(
       success: false,
-      statusCode: statusCode,
-      error: errorMessage,
+      statusCode: response.statusCode,
       data: data,
+      error: detail is String
+          ? detail
+          : detail is Map && detail['message'] is String
+          ? detail['message'] as String
+          : 'Error del servidor (${response.statusCode})',
     );
   }
 
   void dispose() {
+    if (_ownsSessions) _sessions?.dispose();
     _client.close();
   }
 }
 
-/// Wrapper de respuesta API
 class ApiResponse {
   final bool success;
   final int statusCode;
   final dynamic data;
-  final String? error;
-  final String? message;
-
+  final String? error, message;
   ApiResponse({
     required this.success,
     required this.statusCode,

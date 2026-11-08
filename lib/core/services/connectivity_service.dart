@@ -5,7 +5,8 @@ import '../../services/local_notification_service.dart';
 
 class ConnectivityService extends ChangeNotifier {
   final Connectivity _connectivity = Connectivity();
-  late StreamSubscription<List<ConnectivityResult>> _subscription;
+  StreamSubscription<List<ConnectivityResult>>? _subscription;
+  bool _disposed=false;
   bool _isOnline = true;
   bool _wasOffline = false;
   bool _isInitialized = false;
@@ -21,6 +22,7 @@ class ConnectivityService extends ChangeNotifier {
     try {
       final results = await _connectivity.checkConnectivity();
       final hasConnection = results.any((r) => r != ConnectivityResult.none);
+      if(_disposed)return;
       _isOnline = hasConnection;
       _isInitialized = true;
       notifyListeners();
@@ -29,6 +31,7 @@ class ConnectivityService extends ChangeNotifier {
       _isInitialized = true;
     }
 
+    if(_disposed)return;
     _subscription = _connectivity.onConnectivityChanged.listen(_updateConnectionStatus);
   }
 
@@ -66,7 +69,8 @@ class ConnectivityService extends ChangeNotifier {
 
   @override
   void dispose() {
-    _subscription.cancel();
+    _disposed=true;
+    _subscription?.cancel();
     super.dispose();
   }
 }

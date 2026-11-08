@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/theme.dart';
+import '../widgets/offline_connectivity_banner.dart';
 import 'home/home_screen.dart';
 import 'reservations/reservations_screen.dart';
 import 'shop/catalog_screen.dart';
@@ -36,10 +37,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final accent = AppTheme.getAccent(context);
 
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
+      body: Column(children:[
+        const OfflineConnectivityBanner(),
+        Expanded(child:IndexedStack(index:_currentIndex,children:_screens)),
+      ]),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: cardBg,

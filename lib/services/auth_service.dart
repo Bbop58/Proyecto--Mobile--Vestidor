@@ -1,317 +1,293 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../config/api_config.dart';
 import '../core/database/database_helper.dart';
 import '../models/user.dart';
+import '../models/mobile_session.dart';
 import 'api_service.dart';
 import 'storage_service.dart';
+import 'mobile_session_service.dart';
 
-/// Servicio de autenticación — gestiona login, register, logout y estado del usuario
+/// UI adapter for the single durable session coordinator.
 class AuthService extends ChangeNotifier {
   final ApiService _apiService;
-  final StorageService _storageService;
-
+  late final MobileSessionService _sessions;
   User? _currentUser;
-  bool _isLoading = false;
-  bool _isAuthenticated = false;
+  bool _isLoading = false, _platformOnly = false;
+  int _authEpoch = 0;
   String? _error;
-  bool _platformOnly=false;
-  int _authEpoch=0;
-  bool get platformOnly=>_platformOnly;
-  void dismissPlatformAccess(){_platformOnly=false;_error=null;notifyListeners();}
-
-  Future<bool> _acceptMobileIdentity(dynamic raw) async {
-    if(raw is! Map<String,dynamic>) return true;
-    if(User.fromJson(raw).canUseMobile){_platformOnly=false;return true;}
-    // Clear credentials only: databases, quarantines and previous owners' outboxes stay intact.
-    DatabaseHelper.activateScope(null);
-    await _storageService.clearAll();
-    _currentUser=null;_isAuthenticated=false;_platformOnly=true;
-    _setError('Esta cuenta se gestiona en la web de FashionStore. El panel de plataforma no está disponible en la app móvil.');
-    return false;
+  AuthService(this._apiService, StorageService storage) {
+    _sessions = _apiService.sessions;
+    _sessions.addListener(_syncSession);
+    _syncSession(notify: false);
+  }
+  User? get currentUser => _currentUser;
+  bool get isAuthenticated =>
+      _sessions.hasIdentity && _currentUser?.canUseMobile == true;
+  SessionState get sessionState => _sessions.state;
+  Future<void> revalidateSession() async { await _sessions.revalidate(); }
+  bool get isLoading => _isLoading || _sessions.state == SessionState.restoring;
+  String? get error => _error ?? _sessions.notice;
+  bool get platformOnly => _platformOnly || _sessions.platformDenied;
+  bool get sessionRecoveryNeeded =>
+      _sessions.state == SessionState.storageError ||
+      _sessions.awaitingLegacyConnection;
+  String get sessionRecoveryMessage =>
+      _sessions.notice ?? 'Conéctate para recuperar tu sesión anterior.';
+  void dismissPlatformAccess() {
+    _platformOnly = false;
+    _sessions.dismissPlatformAccess();
+    _error = null;
+    notifyListeners();
   }
 
-  AuthService(this._apiService, this._storageService);
+  void _syncSession({bool notify = true}) {
+    final raw = _sessions.profile;
+    _currentUser = raw == null ? null : User.fromJson(raw);
+    DatabaseHelper.activateScope(
+      isAuthenticated ? _sessions.identity?.scope : null,
+    );
+    if (notify) notifyListeners();
+  }
 
-  // Getters
-  User? get currentUser => _currentUser;
-  bool get isLoading => _isLoading;
-  bool get isAuthenticated => _isAuthenticated;
-  String? get error => _error;
-
-  bool _isInitializing = false;
-
-  /// Inicializar — verificar si hay sesión guardada
   Future<void> initialize() async {
-    if (_isInitializing) return;
-    _isInitializing = true;
-    _isLoading = true;
-    notifyListeners();
-
+    if (_isLoading) return;
+    final epoch = _authEpoch;
+    _setLoading(true);
     try {
-      final hasToken = await _storageService.hasToken().timeout(
-        const Duration(seconds: 2),
-        onTimeout: () => false,
-      );
-
-      if (hasToken) {
-        await _loadProfile().timeout(
-          const Duration(seconds: 3),
-          onTimeout: () {
-            debugPrint('Timeout al verificar token/perfil en servidor');
-          },
-        );
-      }
-    } catch (e) {
-      debugPrint('Error initializing auth: $e');
-      DatabaseHelper.activateScope(null);
-      await _storageService.clearAll();
+      await _sessions.restore();
     } finally {
-      _isLoading = false;
-      _isInitializing = false;
-      notifyListeners();
+      if (epoch == _authEpoch) _setLoading(false);
     }
   }
 
-  /// Registrar nuevo usuario
+  Future<void> retrySession() async {
+    final epoch = _authEpoch;
+    _setLoading(true);
+    _error = null;
+    try {
+      if (_sessions.logoutNeedsRetry) {
+        await _sessions.signOut();
+      } else {
+        await _sessions.restore(retry: true);
+      }
+    } on SessionStorageException {
+      _error = const SessionStorageException().toString();
+    } finally {
+      if (epoch == _authEpoch) _setLoading(false);
+    }
+  }
+
+  Future<bool> _establishLegacy(
+    dynamic raw,
+    int epoch,
+    int sessionAttempt,
+  ) async {
+    if (epoch != _authEpoch) return false;
+    if (raw is! Map<String, dynamic> || raw['access_token'] is! String) {
+      _setError('El servidor no devolvió una sesión válida.');
+      return false;
+    }
+    final profile = raw['user'];
+    if (profile is Map<String, dynamic> &&
+        !User.fromJson(profile).canUseMobile) {
+      await _sessions.signOut();
+      _platformOnly = true;
+      _setError(
+        'Esta cuenta se gestiona en la web de FashionStore. El panel de plataforma no está disponible en la app móvil.',
+      );
+      return false;
+    }
+    await _sessions.bootstrap(
+      legacyAccessToken: raw['access_token'] as String,
+      legacyRefreshToken: raw['refresh_token'] as String?,
+      attempt: sessionAttempt,
+    );
+    if (epoch != _authEpoch) return false;
+    unawaited(_sessions.flushPendingRevocations());
+    return isAuthenticated;
+  }
+
+  Future<bool> login({required String email, required String password}) async {
+    if (isLoading) return false;
+    final epoch = ++_authEpoch;
+    int? attempt;
+    _setLoading(true);
+    _error = null;
+    _platformOnly = false;
+    try {
+      attempt = _sessions.beginAuthentication();
+      final response = await _apiService.post(ApiConfig.loginUrl, {
+        'email': email,
+        'password': password,
+      });
+      if (epoch != _authEpoch) return false;
+      if (!response.success) {
+        _sessions.cancelAuthentication(attempt);
+        _setError(response.error ?? 'No se pudo iniciar sesión.');
+        return false;
+      }
+      return await _establishLegacy(response.data, epoch, attempt);
+    } on SessionStorageException {
+      if (epoch == _authEpoch) {
+        _setError(const SessionStorageException().toString());
+      }
+      return false;
+    } on SessionFailure catch (e) {
+      if (epoch == _authEpoch) {
+        if (attempt != null) _sessions.cancelAuthentication(attempt);
+        _setError(e.message);
+      }
+      return false;
+    } catch (_) {
+      if (epoch == _authEpoch) {
+        if (attempt != null) _sessions.cancelAuthentication(attempt);
+        _setError('No se pudo iniciar sesión. Reintenta.');
+      }
+      return false;
+    } finally {
+      if (epoch == _authEpoch) _setLoading(false);
+    }
+  }
+
   Future<bool> register({
     required String email,
     required String password,
     required String fullName,
     required String tenantId,
   }) async {
-    if(_isLoading) return false;
-    final attempt=++_authEpoch;
+    if (isLoading) return false;
+    final epoch = ++_authEpoch;
+    int? attempt;
+    var accountCreated = false;
     _setLoading(true);
-    _clearError();
-
+    _error = null;
     try {
+      attempt = _sessions.beginAuthentication();
       final response = await _apiService.post(ApiConfig.registerUrl, {
         'email': email,
         'password': password,
         'full_name': fullName,
         'tenant_id': tenantId,
       });
-      if(attempt!=_authEpoch) return false;
-
-      if (response.success && response.data != null) {
-        final data = response.data;
-        if (data is Map<String, dynamic> && data.containsKey('access_token')) {
-          if(!await _acceptMobileIdentity(data['user'])) return false;
-          final accessToken = data['access_token'] as String;
-          DatabaseHelper.activateScope(null);
-          await _storageService.setAccessToken(accessToken);
-
-          if (data['refresh_token'] != null) {
-            await _storageService.setRefreshToken(
-              data['refresh_token'] as String,
-            );
-          }
-
-          if (data['user'] != null && data['user'] is Map<String, dynamic>) {
-            _currentUser = User.fromJson(data['user'] as Map<String, dynamic>);
-            await _activateCompany();
-            _isAuthenticated = true;
-          } else {
-            await _loadProfile();
-          }
-          return _isAuthenticated;
-        } else {
-          // Si el endpoint no retorna token directamente, intenta login
-          return await _loginInternal(email: email, password: password);
-        }
-      } else {
-        _setError(response.error ?? 'Error en el registro');
+      if (epoch != _authEpoch) return false;
+      if (!response.success) {
+        _sessions.cancelAuthentication(attempt);
+        _setError(response.error ?? 'No se pudo registrar la cuenta.');
         return false;
       }
-    } catch (e) {
-      debugPrint('Error en registro: $e');
-      _setError('Error de conexión o de datos: ${e.toString()}');
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Iniciar sesión
-  Future<bool> login({required String email, required String password}) async {
-    if(_isLoading) return false;
-    final attempt=++_authEpoch;
-    _setLoading(true);
-    _clearError();
-
-    try {
-      return await _loginInternal(email: email, password: password);
-    } catch (e) {
-      debugPrint('Error en login: $e');
-      if(attempt!=_authEpoch) return false;
-      _setError('Error de conexión o de datos: ${e.toString()}');
-      return false;
-    } finally {
-      if(attempt==_authEpoch) _setLoading(false);
-    }
-  }
-
-  /// Helper interno para login (sin manejar _setLoading nuevamente)
-  Future<bool> _loginInternal({
-    required String email,
-    required String password,
-  }) async {
-    final attempt=_authEpoch;
-    final response = await _apiService.post(ApiConfig.loginUrl, {
-      'email': email,
-      'password': password,
-    });
-    if(attempt!=_authEpoch) return false;
-
-    if (response.success && response.data != null) {
-      final data = response.data;
-      if (data is Map<String, dynamic> && data.containsKey('access_token')) {
-        if(!await _acceptMobileIdentity(data['user'])) return false;
-        final accessToken = data['access_token'] as String;
-        DatabaseHelper.activateScope(null);
-        await _storageService.setAccessToken(accessToken);
-
-        if (data['refresh_token'] != null) {
-          await _storageService.setRefreshToken(
-            data['refresh_token'] as String,
+      accountCreated = true;
+      var raw = response.data;
+      if (raw is! Map<String, dynamic> || raw['access_token'] is! String) {
+        final login = await _apiService.post(ApiConfig.loginUrl, {
+          'email': email,
+          'password': password,
+        });
+        if (epoch != _authEpoch) return false;
+        if (!login.success) {
+          throw const SessionFailure(
+            0,
+            'REGISTERED',
+            'Cuenta creada. Vuelve a iniciar sesión.',
           );
         }
-
-        if (data['user'] != null && data['user'] is Map<String, dynamic>) {
-          _currentUser = User.fromJson(data['user'] as Map<String, dynamic>);
-          await _activateCompany();
-          _isAuthenticated = true;
-        } else {
-          await _loadProfile();
+        raw = login.data;
+      }
+      return await _establishLegacy(raw, epoch, attempt);
+    } catch (_) {
+      if (epoch == _authEpoch) {
+        if (attempt != null && _sessions.state != SessionState.storageError) {
+          _sessions.cancelAuthentication(attempt);
         }
-        return _isAuthenticated;
-      } else {
-        _setError('Formato de respuesta del servidor no válido');
-        return false;
+        _setError(
+          accountCreated
+              ? 'Cuenta creada. No se pudo guardar la sesión; vuelve a iniciar sesión.'
+              : 'No se pudo completar el registro. Reintenta.',
+        );
       }
-    } else {
-      _setError(response.error ?? 'Credenciales inválidas');
       return false;
-    }
-  }
-
-  /// Cerrar sesión
-  Future<void> logout() async {
-    ++_authEpoch;
-    _setLoading(true);
-
-    try {
-      // Notificar al backend para invalidar el token
-      await _apiService.postAuth(ApiConfig.logoutUrl, {
-        'refresh_token': await _storageService.getRefreshToken(),
-      });
-    } catch (e) {
-      debugPrint('Error notificando logout al backend: $e');
     } finally {
-      // Limpiar estado local en cualquier caso
-      DatabaseHelper.activateScope(null);
-      await _storageService.clearAll();
-      _currentUser = null;
-      _isAuthenticated = false;
-      _setLoading(false);
+      if (epoch == _authEpoch) _setLoading(false);
     }
   }
 
-  /// Cargar perfil del usuario actual
-  Future<void> _loadProfile() async {
-    final attempt=_authEpoch;
+  Future<bool> logout() async {
+    final epoch = ++_authEpoch;
+    _setLoading(true);
+    _error = null;
     try {
-      final response = await _apiService.getAuth(ApiConfig.profileUrl);
-      if(attempt!=_authEpoch) return;
-
-      if (response.success &&
-          response.data != null &&
-          response.data is Map<String, dynamic>) {
-        if(!await _acceptMobileIdentity(response.data)) return;
-        _currentUser = User.fromJson(response.data as Map<String, dynamic>);
-        await _activateCompany();
-        _isAuthenticated = true;
-      } else {
-        // Token inválido o expirado
-        DatabaseHelper.activateScope(null);
-        await _storageService.clearAll();
-        _currentUser = null;
-        _isAuthenticated = false;
-      }
-    } catch (e) {
-      debugPrint('Error al cargar perfil: $e');
-      DatabaseHelper.activateScope(null);
-      await _storageService.clearAll();
-      _currentUser = null;
-      _isAuthenticated = false;
+      await _sessions.signOut();
+      return true;
+    } on SessionStorageException {
+      _setError(
+        'No se pudo guardar el cierre de sesión. Reintenta antes de cerrar la app.',
+      );
+      return false;
+    } finally {
+      if (epoch == _authEpoch) _setLoading(false);
     }
   }
 
-  /// Actualizar perfil
   Future<bool> updateProfile({String? fullName, String? email}) async {
+    final generation = _sessions.generation;
     _setLoading(true);
-    _clearError();
-
+    _error = null;
     try {
-      final body = <String, dynamic>{};
-      if (fullName != null) body['full_name'] = fullName;
-      if (email != null) body['email'] = email;
-
-      final response = await _apiService.putAuth(ApiConfig.profileUrl, body);
-
-      if (response.success &&
-          response.data != null &&
-          response.data is Map<String, dynamic>) {
-        if(!await _acceptMobileIdentity(response.data)) return false;
-        _currentUser = User.fromJson(response.data as Map<String, dynamic>);
-        return true;
-      } else {
-        _setError(response.error ?? 'Error al actualizar perfil');
-        return false;
+      final response = await _apiService.putAuth(ApiConfig.profileUrl, {
+        if (fullName != null) 'full_name': fullName,
+        if (email != null) 'email': email,
+      });
+      if (generation != _sessions.generation) return false;
+      if (response.success && response.data is Map<String, dynamic>) {
+        await _sessions.updateProfile(response.data as Map<String, dynamic>);
+        return generation == _sessions.generation;
       }
-    } catch (e) {
-      debugPrint('Error al actualizar perfil: $e');
-      _setError('Error al actualizar perfil: ${e.toString()}');
+      _setError(response.error ?? 'No se pudo actualizar el perfil.');
+      return false;
+    } catch (_) {
+      if (generation == _sessions.generation) {
+        _setError('No se pudo guardar el perfil. Reintenta.');
+      }
       return false;
     } finally {
-      _setLoading(false);
+      if (generation == _sessions.generation) _setLoading(false);
     }
   }
 
-  /// Cambiar contraseña del usuario autenticado
   Future<Map<String, dynamic>> changePassword({
     required String currentPassword,
     required String newPassword,
   }) async {
+    final generation = _sessions.generation;
     _setLoading(true);
-    _clearError();
-
+    _error = null;
     try {
       final response = await _apiService.postAuth(ApiConfig.changePasswordUrl, {
         'current_password': currentPassword,
         'new_password': newPassword,
       });
-
-      if (response.success) {
-        String msg = 'Contraseña actualizada exitosamente';
-        if (response.data is Map<String, dynamic> &&
-            response.data['message'] != null) {
-          msg = response.data['message'] as String;
-        }
-        return {'success': true, 'message': msg};
-      } else {
-        final err = response.error ?? 'Error al cambiar contraseña';
-        _setError(err);
-        return {'success': false, 'message': err};
+      if (generation != _sessions.generation) {
+        return {'success': false, 'message': 'La sesión cambió.'};
       }
-    } catch (e) {
-      debugPrint('Error al cambiar contraseña: $e');
-      final err = 'Error de conexión al cambiar contraseña: ${e.toString()}';
-      _setError(err);
-      return {'success': false, 'message': err};
+      if (response.success) {
+        await logout();
+        return {
+          'success': true,
+          'message': 'Contraseña actualizada. Vuelve a iniciar sesión.',
+        };
+      }
+      final message = response.error ?? 'No se pudo cambiar la contraseña.';
+      _setError(message);
+      return {'success': false, 'message': message};
+    } catch (_) {
+      return {
+        'success': false,
+        'message': 'No se pudo completar el cambio. Reintenta.',
+      };
     } finally {
-      _setLoading(false);
+      if (generation == _sessions.generation) _setLoading(false);
     }
   }
 
@@ -321,20 +297,10 @@ class AuthService extends ChangeNotifier {
       throw StateError('No se pudieron cargar las empresas');
     }
     return (response.data as List)
-        .map((x) => Map<String, dynamic>.from(x as Map))
+        .map((v) => Map<String, dynamic>.from(v as Map))
         .toList();
   }
 
-  Future<void> _activateCompany() async {
-    final user = _currentUser;
-    if (user == null || user.tenantId == null || !user.canUseMobile) {
-      throw StateError('La cuenta no tiene empresa');
-    }
-    await _storageService.setUserId(user.id);
-    DatabaseHelper.activateScope('${user.tenantId}:${user.id}');
-  }
-
-  // Helpers privados
   void _setLoading(bool value) {
     _isLoading = value;
     notifyListeners();
@@ -345,7 +311,9 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _clearError() {
-    _error = null;
+  @override
+  void dispose() {
+    _sessions.removeListener(_syncSession);
+    super.dispose();
   }
 }

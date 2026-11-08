@@ -119,6 +119,11 @@ class DatabaseHelper {
     });
   }
 
+  Future<void> discardUnusedAuthorizations(String channel) async {
+    final db = await database;
+    await db.delete('offline_authorizations',where:'channel=?',whereArgs:[channel]);
+  }
+
   Future<Map<String,dynamic>?> takeAuthorization(String channel) async {
     final db=await database;
     return db.transaction((txn) async {

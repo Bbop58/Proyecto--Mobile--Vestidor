@@ -113,6 +113,7 @@ class FavoriteService extends ChangeNotifier {
     _syncing.add(owner);
     final db = DatabaseHelper.instance.forScope(owner);
     try {
+      if (!await _api.prepareSession(expectedScope:owner)) return;
       for (final row in await db.pendingFavoriteChanges(
         owner.split(':').last,
       )) {

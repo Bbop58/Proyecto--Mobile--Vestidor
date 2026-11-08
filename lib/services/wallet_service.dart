@@ -219,7 +219,9 @@ class WalletService extends ChangeNotifier {
     if (!totalAmount.isFinite || totalAmount <= 0 || (currentWallet.saldoDisponible*100).round() < (totalAmount*100).round()) {
       throw Exception('Saldo disponible insuficiente');
     }
-    final grant=_connectivity.isOnline?null:await OfflineAuthorizationService(_apiService).take('WALLET',online:false);
+    final serverReady = _connectivity.isOnline && await _apiService.prepareSession(expectedScope:scope);
+    if (scope != DatabaseHelper.scope) throw StateError('La sesión cambió; no se creó una nueva compra');
+    final grant=serverReady?null:await OfflineAuthorizationService(_apiService).take('WALLET',online:false);
     final clientOpId = grant?['client_operation_id']?.toString() ?? _uuid.v4();
     final nowIso = DateTime.now().toUtc().toIso8601String();
     await db.recordWalletOrder({
@@ -271,6 +273,13 @@ class WalletService extends ChangeNotifier {
     if (force) _paused = false;
     final db = _db.forScope(scope);
     try {
+      if (!await _apiService.prepareSession(expectedScope:scope)) {
+        if (!_disposed && scope == DatabaseHelper.scope) {
+          _errorMessage = _apiService.sessionCoordinator?.notice ?? 'Revalida tu sesión; la compra pendiente se conserva.';
+          if (_apiService.sessionCoordinator?.hasIdentity == true) _scheduleRetry(scope);
+        }
+        return false;
+      }
       final pending = (await db.getPendingOfflineWalletOrders()).where((row)=>onlineOperationId==null || row['client_operation_id']==onlineOperationId).take(100).toList();
       if (_disposed || scope != DatabaseHelper.scope) return false;
       if (pending.isEmpty) return true;

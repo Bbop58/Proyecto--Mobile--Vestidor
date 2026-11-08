@@ -3,10 +3,14 @@ import 'package:flutter/foundation.dart';
 class ApiConfig {
   // Para Producción: puedes cambiar esta URL por la de Railway,
   // o compilar con: flutter build apk --release --dart-define=API_URL=https://tu-backend.up.railway.app
-  static const String _envUrl = String.fromEnvironment('API_URL', defaultValue: '');
+  static const String _envUrl = String.fromEnvironment(
+    'API_URL',
+    defaultValue: '',
+  );
 
   // URL de producción por defecto
-  static const String productionUrl = 'https://proyecto-backend-vestidor-production.up.railway.app';
+  static const String productionUrl =
+      'https://proyecto-backend-vestidor-production.up.railway.app';
 
   static String get baseUrl {
     if (_envUrl.isNotEmpty) return _envUrl;
@@ -25,6 +29,10 @@ class ApiConfig {
   static String get loginUrl => '$apiUrl/auth/login';
   static String get registerUrl => '$apiUrl/auth/register';
   static String get logoutUrl => '$apiUrl/auth/logout';
+  static String get refreshUrl => '$apiUrl/auth/refresh';
+  static String get mobileSessionUrl => '$apiUrl/auth/mobile/session';
+  static String get mobileRefreshUrl => '$apiUrl/auth/mobile/refresh';
+  static String get mobileLogoutUrl => '$apiUrl/auth/mobile/logout';
   static String get changePasswordUrl => '$apiUrl/auth/change-password';
   static String get publicTenantsUrl => '$apiUrl/subscriptions/public/tenants';
 
@@ -33,14 +41,19 @@ class ApiConfig {
 
   // Notifications endpoints
   static String get notificationsUrl => '$apiUrl/notifications';
-  static String get unreadNotificationsCountUrl => '$apiUrl/notifications/unread-count';
-  static String markNotificationReadUrl(String id) => '$apiUrl/notifications/$id/read';
-  static String get markAllNotificationsReadUrl => '$apiUrl/notifications/mark-all-read';
+  static String get unreadNotificationsCountUrl =>
+      '$apiUrl/notifications/unread-count';
+  static String markNotificationReadUrl(String id) =>
+      '$apiUrl/notifications/$id/read';
+  static String get markAllNotificationsReadUrl =>
+      '$apiUrl/notifications/mark-all-read';
 
   // PayPal Endpoints
   static String get paypalConfigUrl => '$apiUrl/payments/paypal/config';
-  static String get paypalCreateOrderUrl => '$apiUrl/payments/paypal/create-order';
-  static String get paypalCaptureOrderUrl => '$apiUrl/payments/paypal/capture-order';
+  static String get paypalCreateOrderUrl =>
+      '$apiUrl/payments/paypal/create-order';
+  static String get paypalCaptureOrderUrl =>
+      '$apiUrl/payments/paypal/capture-order';
 
   // Offline Sync Endpoints (RNF04 / RNF05)
   static String get syncBatchUrl => '$apiUrl/sync/batch';
@@ -53,10 +66,10 @@ class ApiConfig {
   static String get walletMeUrl => '$apiUrl/wallet/me';
   static String get walletHistoryUrl => '$apiUrl/wallet/history';
   static String get walletTopupPaypalUrl => '$apiUrl/wallet/topup/paypal';
-  static String get walletSyncOfflineUrl => '$apiUrl/wallet/sync-offline-orders';
+  static String get walletSyncOfflineUrl =>
+      '$apiUrl/wallet/sync-offline-orders';
 
   // Timeouts
   static const Duration connectionTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 10);
 }
-

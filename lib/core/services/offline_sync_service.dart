@@ -39,7 +39,6 @@ class OfflineSyncService extends ChangeNotifier {
       : _walletService = walletService {
     DatabaseHelper.scopeChanges.addListener(_onScopeChanged);
     _walletService?.addListener(_onWalletChanged);
-    if(_connectivityService.isOnline) unawaited(OfflineAuthorizationService(_apiService).prefetch('SYNC'));
     refreshPendingCount();
 
     // Auto-sync listener: cuando se detecta conexión o reconexión
@@ -214,6 +213,13 @@ class OfflineSyncService extends ChangeNotifier {
     notifyListeners();
     final db = _db.forScope(scope);
     try {
+      if (!await _apiService.prepareSession(expectedScope:scope)) {
+        if (!_disposed && scope == DatabaseHelper.scope) {
+          _lastError = _apiService.sessionCoordinator?.notice ?? 'Revalida tu sesión para sincronizar; pendientes conservados.';
+          if (_apiService.sessionCoordinator?.hasIdentity == true) _retry(scope);
+        }
+        return false;
+      }
       // Keep the wallet's signed protocol and mutex; never send it as a cash sale.
       final walletSynced = _walletService == null ||
           await _walletService.syncOfflineWalletOrders(force: force);

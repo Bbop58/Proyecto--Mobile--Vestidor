@@ -22,18 +22,36 @@ class OfflineAuthorizationService {
               raw.map((g)=>Map<String,dynamic>.from(g as Map)).toList());
           _denied.remove('$owner:$channel');
         }
-      } else if(response.statusCode==403) {_denied.add('$owner:$channel');}
+      } else if(response.statusCode==403) {
+        _denied.add('$owner:$channel');
+        await DatabaseHelper.instance.forScope(owner).discardUnusedAuthorizations(channel);
+      }
     } catch(_) { /* Authorizations are optional; never discard existing pending work. */ }
   }
 
   Future<Map<String,dynamic>?> take(String channel,{required bool online}) async {
     final owner=DatabaseHelper.scope;
     if(owner==null) throw StateError('Inicia sesión');
+    final serverReady = online && await api.prepareSession(expectedScope:owner);
+    if(owner!=DatabaseHelper.scope) throw StateError('La identidad cambió');
+    final profile=api.sessionCoordinator?.profile;
+    if (api.sessionCoordinator != null && (profile == null ||
+        profile['service_restricted'] == true ||
+        (profile['subscription_capabilities'] as Map?)?['offline'] != true)) {
+      throw StateError('La sesión o el contrato no habilita nuevas operaciones offline');
+    }
+    if (_denied.contains('$owner:$channel') && serverReady) await prefetch(channel);
+    if (_denied.contains('$owner:$channel')) {
+      throw StateError('El contrato no habilita operaciones offline');
+    }
     final db=DatabaseHelper.instance.forScope(owner);
     var grant=await db.takeAuthorization(channel);
-    if(grant==null && online) {await prefetch(channel);grant=await db.takeAuthorization(channel);}
+    if(grant==null && serverReady) {await prefetch(channel);grant=await db.takeAuthorization(channel);}
     if(owner!=DatabaseHelper.scope) throw StateError('La identidad cambió');
-    if(!online && _denied.contains('$owner:$channel')) throw StateError('El contrato no habilita operaciones offline');
+    if(_denied.contains('$owner:$channel')) throw StateError('El contrato no habilita operaciones offline');
+    if (!serverReady && grant == null) {
+      throw StateError('No hay autorización offline vigente. Conéctate para renovarla; tus pendientes se conservan.');
+    }
     return grant;
   }
 }
