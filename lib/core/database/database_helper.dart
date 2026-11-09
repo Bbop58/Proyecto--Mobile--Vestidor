@@ -492,7 +492,8 @@ class DatabaseHelper {
         final row=previous.single;
         if (row['operation_type']!='VENTA_CONTADO_OFFLINE' ||
             row['sucursal_id']!=branchId || row['cajero_id']!=cashierId ||
-            row['items_json']!=encoded || row['monto_total']!=totalCents/100 ||
+            jsonEncode((jsonDecode(row['items_json'] as String) as List).map((i)=>{
+              'variante_id':i['variante_id'],'cantidad':i['cantidad'],'precio_unitario':i['precio_unitario']}).toList())!=encoded || row['monto_total']!=totalCents/100 ||
             row['monto_recibido']!=receivedCents/100) {
           throw StateError('La solicitud ya pertenece a otra venta');
         }
@@ -556,7 +557,12 @@ class DatabaseHelper {
         'sucursal_id':branchId,'cajero_id':cashierId,'fecha_local':timestamp,
         'monto_total':totalCents/100,'monto_recibido':receivedCents/100,
         'cambio':(receivedCents-totalCents)/100,'metodo_pago':'EFECTIVO',
-        'items_json':encoded,'local_status':'LOCAL_PENDIENTE','created_at':timestamp});
+        'items_json':jsonEncode(normalized.map((i)=>{...i,
+          'nombre':stock[i['variante_id']]?['nombre'],
+          'sku':stock[i['variante_id']]?['sku'],
+          'talla':stock[i['variante_id']]?['talla'],
+          'color':stock[i['variante_id']]?['color']} ).toList()),
+        'local_status':'LOCAL_PENDIENTE','created_at':timestamp});
       await tx.delete('offline_authorizations',where:'client_operation_id=?',whereArgs:[id]);
       if (scope != owner) throw StateError('La identidad cambió');
       return id;

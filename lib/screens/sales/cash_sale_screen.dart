@@ -1,3 +1,4 @@
+import '../../widgets/local_receipt_actions.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -199,6 +200,7 @@ class _CashSaleScreenState extends State<CashSaleScreen> {
       if(receiptId!=null) Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
         const Text('Comprobante provisional',style:TextStyle(fontWeight:FontWeight.bold)),
         Text('Operación $receiptId'),
+        if(receipt!=null) LocalReceiptActions(operation:receipt!),
         Text(receipt?['local_status']?.toString()??'Pendiente de sincronización'),
         TextButton(onPressed:()=>Navigator.pushNamed(context,AppRoutes.offlineSync),child:const Text('Ver sincronización')),
       ]))),

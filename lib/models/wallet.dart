@@ -52,6 +52,7 @@ class UserWallet {
 }
 
 class WalletTxItem {
+  final String? syncStatus;
   final String id;
   final String tipo;
   final double monto;
@@ -61,6 +62,7 @@ class WalletTxItem {
   final DateTime fecha;
 
   WalletTxItem({
+    this.syncStatus,
     required this.id,
     required this.tipo,
     required this.monto,
@@ -72,6 +74,7 @@ class WalletTxItem {
 
   factory WalletTxItem.fromJson(Map<String, dynamic> json) {
     return WalletTxItem(
+      syncStatus:json['estado_sync']?.toString(),
       id: json['id']?.toString() ?? '',
       tipo: json['tipo']?.toString() ?? 'DESCONOCIDO',
       monto: (json['monto'] as num?)?.toDouble() ?? 0.0,

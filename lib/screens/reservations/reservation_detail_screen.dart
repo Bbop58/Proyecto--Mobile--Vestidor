@@ -1,3 +1,5 @@
+import '../../widgets/receipt_actions.dart';
+import '../../models/receipt_document.dart';
 import 'package:flutter/material.dart';
 import '../../config/theme.dart';
 import '../../models/reservation.dart';
@@ -113,6 +115,7 @@ class ReservationDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            ReceiptActions(reference:ReceiptRef('reservation',reservation.id),email:reservation.clienteEmail),
             // Estado Card
             Container(
               width: double.infinity,

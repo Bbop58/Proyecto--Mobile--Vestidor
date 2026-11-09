@@ -1,3 +1,6 @@
+import '../../widgets/local_receipt_actions.dart';
+import '../../widgets/receipt_actions.dart';
+import '../../models/receipt_document.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -398,6 +401,7 @@ class _CartScreenState extends State<CartScreen> {
                     'Puedes pasar a retirarlo y pagarlo en mostrador en la sucursal seleccionada.',
                     style: TextStyle(color: AppTheme.getTextSecondary(ctx), fontSize: 12),
                   ),
+                  if(response.data?['id']!=null)ReceiptActions(reference:ReceiptRef('reservation',response.data['id'].toString())),
                 ],
               ),
               actions: [
@@ -651,6 +655,8 @@ class _CartScreenState extends State<CartScreen> {
       }
       final clientOpId = result['client_operation_id']?.toString() ?? 'OP-WALLET';
       final isOfflineQueued = result['offline_queued'] == true;
+      final storedReceipt=await DatabaseHelper.instance.forScope(owner!).getOfflineWalletOrder(clientOpId);
+      if(!mounted||owner!=DatabaseHelper.scope)return;
 
       cart.clearCart();
       setState(() => _isSubmitting = false);
@@ -709,6 +715,7 @@ class _CartScreenState extends State<CartScreen> {
                   ],
                 ),
               ),
+              if(storedReceipt!=null) LocalReceiptActions(operation:{...storedReceipt,'operation_type':'COMPRA_BILLETERA_OFFLINE'}),
               if (isOfflineQueued) ...[
                 const SizedBox(height: 10),
                 const Text(
@@ -985,6 +992,7 @@ class _CartScreenState extends State<CartScreen> {
                                           child: Column(
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
+                                              if(venta['id']!=null)ReceiptActions(reference:ReceiptRef('sale',venta['id'].toString())),
                                               Text('N° RECIBO: $numRecibo', style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.successColor, fontSize: 15)),
                                               const SizedBox(height: 4),
                                               Text('Transacción: PAYPAL_$captureId', style: TextStyle(color: AppTheme.getTextSecondary(dialogCtx), fontSize: 11)),

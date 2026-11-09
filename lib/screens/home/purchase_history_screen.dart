@@ -1,3 +1,5 @@
+import '../../widgets/receipt_actions.dart';
+import '../../models/receipt_document.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
@@ -478,6 +480,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                 ],
               ),
             ),
+            ReceiptActions(reference:ReceiptRef('sale',sale.id)),
             const SizedBox(height: 10),
             ElevatedButton.icon(
               onPressed: () => Navigator.pop(ctx),

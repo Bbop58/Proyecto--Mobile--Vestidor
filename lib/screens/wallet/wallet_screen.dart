@@ -1,3 +1,5 @@
+import '../../widgets/receipt_actions.dart';
+import '../../models/receipt_document.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -580,7 +582,9 @@ class _WalletScreenState extends State<WalletScreen> {
                                     tx.tipo.replaceAll('_', ' '),
                                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textP),
                                   ),
-                                  if (tx.descripcion.isNotEmpty)
+                                  if (['RECARGA_PAYPAL','RECARGA_EFECTIVO_MOSTRADOR'].contains(tx.tipo) && tx.syncStatus=='CONCILIADO')
+                                      ReceiptActions(reference:ReceiptRef('wallet_topup',tx.id)),
+                                    if (tx.descripcion.isNotEmpty)
                                     Text(
                                       tx.descripcion,
                                       style: TextStyle(fontSize: 11, color: textS),

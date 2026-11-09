@@ -1,3 +1,4 @@
+import '../../widgets/local_receipt_actions.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import '../../core/database/database_helper.dart';
@@ -16,6 +17,8 @@ class OfflineSyncScreen extends StatefulWidget {
 }
 
 class _OfflineSyncScreenState extends State<OfflineSyncScreen> {
+
+
   List<Map<String, dynamic>> _operations = [];
   bool _isLoading = true;
   OfflineRecoveryService? _recovery;
@@ -309,6 +312,7 @@ class _OfflineSyncScreenState extends State<OfflineSyncScreen> {
                                     'Recibo Oficial: ${op['server_receipt']}',
                                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
                                   ),
+                                LocalReceiptActions(operation:op),
                                 if (op['error_detail'] != null)
                                   Text(
                                     op['error_detail'],

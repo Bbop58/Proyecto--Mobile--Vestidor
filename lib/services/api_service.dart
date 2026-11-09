@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -152,6 +153,37 @@ class ApiService {
 
   Future<ApiResponse> get(String url) => _request('GET', url, optional: true);
   Future<ApiResponse> getAuth(String url) => _request('GET', url);
+  /// Canonical PDF bytes; same identity/refresh boundary as authenticated JSON GET.
+  Future<Uint8List> getAuthPdf(String url,{String? expectedScope}) async {
+    final scope=expectedScope??DatabaseHelper.scope,coordinator=_sessions;
+    final generation=coordinator?.generation;
+    bool current()=>scope!=null && scope==DatabaseHelper.scope &&
+      (coordinator==null || generation==coordinator.generation);
+    if(!current() || Uri.parse(url).origin!=Uri.parse(ApiConfig.baseUrl).origin){
+      throw StateError('La sesión o el servidor cambió.');
+    }
+    String? token=coordinator!=null?await coordinator.accessToken():await _storageService.getAccessToken();
+    Future<http.Response> send(String access) async {
+      if(!current())throw StateError('La sesión cambió.');
+      final request=http.Request('GET',Uri.parse(url))..followRedirects=false;
+      request.headers.addAll({'Authorization':'Bearer $access','Accept':'application/pdf'});
+      return http.Response.fromStream(await _client.send(request)).timeout(const Duration(seconds:40));
+    }
+    if(token==null || !current())throw StateError('Inicia sesión para descargar.');
+    var response=await send(token);
+    if(!current())throw StateError('La sesión cambió.');
+    if(response.statusCode==401 && coordinator!=null){
+      token=await coordinator.accessToken(forceRefresh:true,rejectedAccessToken:token);
+      if(token==null || !current())throw StateError('Inicia sesión para descargar.');
+      response=await send(token);
+    }
+    if(!current())throw StateError('La sesión cambió.');
+    if(response.statusCode!=200 || !(response.headers['content-type']??'').startsWith('application/pdf') ||
+      response.bodyBytes.length<5 || ascii.decode(response.bodyBytes.take(5).toList(),allowInvalid:true)!='%PDF-'){
+      throw StateError('No se pudo descargar el comprobante. Revisa tu conexión y permisos.');
+    }
+    return response.bodyBytes;
+  }
   Future<ApiResponse> post(String url, Map<String, dynamic> body) =>
       _request('POST', url, body: body, authenticated: false);
   Future<ApiResponse> postAuth(
