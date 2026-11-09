@@ -10,6 +10,23 @@ import 'support/mobile_sessions.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
+  test('authentication cleanup preserves pending push unregister records', () async {
+    final values=<String,String>{
+      'access_token':'qa-access','refresh_token':'qa-refresh','user_id':'qa-user',
+      StorageService.sessionEnvelopeKey:'{}',
+      'fashionstore_push_registration_v1':'{"pending":[{"binding_id":"qa-old"}]}',
+    };
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(channel,(call)async {
+        if(call.method=='deleteAll'){values.clear();return null;}
+        final args=Map<String,dynamic>.from(call.arguments as Map);
+        if(call.method=='delete')values.remove(args['key']);
+        return null;
+      });
+    await StorageService().clearAll();
+    expect(values.keys,['fashionstore_push_registration_v1']);
+    expect(values.values.single,contains('qa-old'));
+  });
   test('a failed durable write does not become a cached session', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

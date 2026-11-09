@@ -219,11 +219,14 @@ class StorageService {
     } catch (_) {}
   }
 
-  // Limpiar todo
+  // Clear authentication keys only; push retains pending unregister receipts.
   Future<void> clearAll() async {
     _memoryCache.clear();
     try {
-      await _storage.deleteAll().timeout(const Duration(seconds: 1));
+      await Future.wait([
+        for(final key in [_accessTokenKey,_refreshTokenKey,_userIdKey,sessionEnvelopeKey])
+          _storage.delete(key:key),
+      ]).timeout(const Duration(seconds: 1));
     } catch (e) {
       debugPrint('Error limpiando storage: $e');
     }

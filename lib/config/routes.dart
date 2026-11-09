@@ -14,4 +14,5 @@ class AppRoutes {
   static const String wallet = '/wallet';
   static const String favorites = '/favorites';
   static const String cashSale = '/cash-sale';
+  static const String notifications = '/notifications';
 }

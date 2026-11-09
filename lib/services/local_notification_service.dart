@@ -41,14 +41,18 @@ class LocalNotificationService {
       },
     );
 
-    // Solicitar permisos nativos en Android 13+
+    // Prepare the channel without prompting on startup. Firebase requests the
+    // Android permission only after the explicit "Activar avisos" action.
     try {
       final androidImplementation = _notificationsPlugin
           .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin
           >();
       if (androidImplementation != null) {
-        await androidImplementation.requestNotificationsPermission();
+        await androidImplementation.createNotificationChannel(
+          const AndroidNotificationChannel('ficct_store_channel','Notificaciones FashionStore',
+            description:'Avisos de compras y reservas',importance:Importance.high),
+        );
       }
     } catch (e) {
       debugPrint('Error solicitando permisos de notificación: $e');

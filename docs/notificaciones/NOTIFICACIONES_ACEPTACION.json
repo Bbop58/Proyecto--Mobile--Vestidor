@@ -1,0 +1,71 @@
+{
+  "backend": {
+    "published": "d81f6e8",
+    "redeployed_during_acceptance": false,
+    "worktree_clean": true
+  },
+  "web": {
+    "commit": "2a426e2",
+    "service_worker_tests": 3,
+    "regression": 221,
+    "companies": [
+      {
+        "company": "urbanstyle",
+        "websocket": "PASS",
+        "foreground_duplicates": 0,
+        "background_notifications": 1,
+        "history": "PASS",
+        "private_data_in_push": false,
+        "system_tap": true
+      },
+      {
+        "company": "modaexpress",
+        "websocket": "PASS",
+        "foreground_duplicates": 0,
+        "background_notifications": 1,
+        "history": "PASS",
+        "private_data_in_push": false,
+        "system_tap": true
+      }
+    ],
+    "published": true,
+    "additional_live_checks": {
+      "stale_company_binding_rejected": true,
+      "current_binding_accepted": true,
+      "pwa_and_fcm_workers_coexist": true,
+      "network_recovery": true,
+      "permission_denial_is_explicit": true,
+      "javascript_errors": 0
+    }
+  },
+  "android": {
+    "normal_initial_storage_retry_required": true,
+    "background_delivery": "PASS",
+    "strict_tap": "PENDING",
+    "urban_websocket_registration": "PASS",
+    "apk_release_delivered": false,
+    "status": "IN_PROGRESS",
+    "storage_isolation_native": "PASS",
+    "local_regression_passed": 148,
+    "analyze": "PASS_NO_ISSUES",
+    "debug_apk_sha256": "8f34ab1f90732d94e8ad097fbe4e389749f9eeba836948e6b3967c4592ea0390",
+    "environment": "Both owned AVDs showed Android System UI/Bluetooth failures. Release x64 installed successfully; physical ARM64 acceptance pending.",
+    "release_candidates": [
+      {
+        "file": "C:\\Users\\Laptop\\FashionStore-recuperado\\mobile\\build\\app\\outputs\\flutter-apk\\app-x86_64-release.apk",
+        "bytes": 22109607,
+        "sha256": "eae25f05b071048a344d0c33f7e270776de08a0c981eb34fc4b40d7c26854bc7"
+      },
+      {
+        "file": "C:\\Users\\Laptop\\FashionStore-recuperado\\mobile\\build\\app\\outputs\\flutter-apk\\app-arm64-v8a-release.apk",
+        "bytes": 20625883,
+        "sha256": "977579d815001c20422c7bff5872450ef510c560b9b8b1d5b755362ec8971d1f"
+      }
+    ],
+    "release_build": "PASS_1584.4_SECONDS",
+    "delivered_test_apk": "C:/Users/Laptop/Downloads/FashionStore-Notificaciones-Prueba-1.0.3-4-arm64.apk",
+    "awaiting": "User installs ARM64 APK, activates notifications, and confirms readiness before sending the next event."
+  },
+  "status": "IN_PROGRESS",
+  "phase": "C2"
+}

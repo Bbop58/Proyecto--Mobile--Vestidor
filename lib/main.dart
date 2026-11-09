@@ -46,6 +46,14 @@ import 'screens/wallet/wallet_screen.dart';
 import 'services/favorite_service.dart';
 import 'screens/shop/favorites_screen.dart';
 import 'screens/sales/cash_sale_screen.dart';
+import 'screens/notifications/notifications_screen.dart';
+
+final appNavigationKey=GlobalKey<NavigatorState>();
+void openPushNotifications(){
+  WidgetsBinding.instance.addPostFrameCallback((_){
+    if(DatabaseHelper.scope!=null)appNavigationKey.currentState?.pushNamed(AppRoutes.notifications);
+  });
+}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -151,10 +159,10 @@ class MyApp extends StatelessWidget {
           update: (_, api, _) => PayPalService(api),
         ),
         ChangeNotifierProxyProvider<ApiService, NotificationService>(
-          create: (context) => NotificationService(context.read<ApiService>()),
+          create: (context) => NotificationService(context.read<ApiService>(),onPushOpened:openPushNotifications),
           update: (_, api, notif) {
             if (notif != null) return notif;
-            return NotificationService(api);
+            return NotificationService(api,onPushOpened:openPushNotifications);
           },
         ),
         ChangeNotifierProvider<CartService>(create: (_) => CartService()),
@@ -186,6 +194,7 @@ class MyApp extends StatelessWidget {
       child: Consumer2<AuthService, ThemeService>(
         builder: (context, auth, themeService, _) {
           return MaterialApp(
+            navigatorKey:appNavigationKey,
             title: 'ficcstore',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
@@ -208,6 +217,7 @@ class MyApp extends StatelessWidget {
               AppRoutes.wallet: (context) => const WalletScreen(),
               AppRoutes.favorites: (context) => const FavoritesScreen(),
               AppRoutes.cashSale: (context) => const CashSaleScreen(),
+              AppRoutes.notifications: (context) => const NotificationsScreen(),
             },
           );
         },

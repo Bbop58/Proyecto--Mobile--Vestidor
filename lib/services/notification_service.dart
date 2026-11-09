@@ -4,7 +4,8 @@ import '../core/database/database_helper.dart';
 import '../config/api_config.dart';
 import '../models/notification_model.dart';
 import 'api_service.dart';
-import 'local_notification_service.dart';
+import 'notification_realtime_service.dart';
+import 'notification_push_service.dart';
 
 class NotificationService extends ChangeNotifier {
   final ApiService _api;
@@ -13,18 +14,18 @@ class NotificationService extends ChangeNotifier {
   int _unreadCount = 0;
   bool _isLoading = false;
   String? _errorMessage;
-  final Set<String> _knownNotificationIds = {};
-  bool _isFirstFetch = true;
 
   bool _disposed = false;
-  NotificationService(this._api) {
+  late final NotificationRealtimeService realtime;
+  late final NotificationPushService push;
+  NotificationService(this._api,{VoidCallback? onPushOpened}) {
     DatabaseHelper.scopeChanges.addListener(_reset);
+    realtime=NotificationRealtimeService(_api,onChanged:()=>fetchNotifications());
+    push=NotificationPushService(_api,onChanged:()=>fetchNotifications(),onOpened:onPushOpened);
   }
   void _reset() {
     _notifications = [];
     _unreadCount = 0;
-    _knownNotificationIds.clear();
-    _isFirstFetch = true;
     _isLoading = false;
     _errorMessage = null;
     notifyListeners();
@@ -34,6 +35,8 @@ class NotificationService extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    realtime.dispose();
+    push.dispose();
     DatabaseHelper.scopeChanges.removeListener(_reset);
     super.dispose();
   }
@@ -43,7 +46,7 @@ class NotificationService extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
-  /// Obtener listado completo de notificaciones y disparar notificación local si hay nuevas
+  /// Recuperar el historial propio; FCM administra los avisos del sistema.
   Future<void> fetchNotifications() async {
     final owner = DatabaseHelper.scope;
     _isLoading = true;
@@ -63,21 +66,6 @@ class NotificationService extends ChangeNotifier {
 
         _unreadCount = _notifications.where((n) => !n.isRead).length;
 
-        // Disparar notificación nativa en Android/iOS para cada nueva notificación
-        for (final n in _notifications) {
-          if (!_isFirstFetch &&
-              !n.isRead &&
-              !_knownNotificationIds.contains(n.id)) {
-            LocalNotificationService.showNotification(
-              id: n.id.hashCode,
-              title: n.title,
-              body: n.message,
-              payload: n.referenceId,
-            );
-          }
-          _knownNotificationIds.add(n.id);
-        }
-        _isFirstFetch = false;
       } else {
         _errorMessage =
             response.error ?? 'No se pudieron cargar las notificaciones';

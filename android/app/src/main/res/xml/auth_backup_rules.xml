@@ -3,4 +3,5 @@
     <!-- flutter_secure_storage 9.2.4: credentials and wrapped key preferences. -->
     <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
     <exclude domain="sharedpref" path="FlutterSecureKeyStorage.xml" />
+    <exclude domain="sharedpref" path="fashionstore_push.xml" />
 </full-backup-content>

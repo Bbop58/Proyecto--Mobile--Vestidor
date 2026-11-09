@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../config/theme.dart';
 import '../../services/notification_service.dart';
+import 'notification_controls.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -138,7 +139,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
         ],
       ),
-      body: Consumer<NotificationService>(
+      body: Column(children:[const NotificationControls(),Expanded(child:Consumer<NotificationService>(
         builder: (context, notifService, _) {
           if (notifService.isLoading && notifService.notifications.isEmpty) {
             return Center(child: CircularProgressIndicator(color: accent));
@@ -337,7 +338,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ),
           );
         },
-      ),
+      ))]),
     );
   }
 }

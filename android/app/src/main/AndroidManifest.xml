@@ -12,6 +12,10 @@
         android:dataExtractionRules="@xml/auth_data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
+        <!-- Required by the FCM register()/onRegistered FID contract. -->
+        <meta-data
+            android:name="firebase_messaging_installation_id_enabled"
+            android:value="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
