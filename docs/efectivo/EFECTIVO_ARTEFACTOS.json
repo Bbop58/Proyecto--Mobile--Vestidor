@@ -1,0 +1,33 @@
+{
+  "date_bolivia": "2026-11-09",
+  "scope": "Flutter cash POS offline E1-E4",
+  "mobile_commit": null,
+  "mobile_commit_note": "See repository main after push; the APK was compiled from these sources before commit",
+  "backend_commit_unchanged": "f635346",
+  "web_commit_unchanged": "59188ba",
+  "github_push_identity": "D-blip-max",
+  "apk": {
+    "path": "C:/Users/Laptop/FashionStore-recuperado/mobile/build/app/outputs/flutter-apk/app-release.apk",
+    "delivery_copy": "C:/Users/Laptop/Downloads/FashionStore-Efectivo-Offline-1.0.3+4.apk",
+    "version": "1.0.3+4",
+    "api_url": "https://proyecto-backend-vestidor-production.up.railway.app",
+    "bytes": 56429160,
+    "sha256": "b79a6e56c4e06543cdb6c3eb1551c431d351488959a271fdabf5300a8eeee8ee",
+    "signing": "debug signingConfig in project release build"
+  },
+  "tests": {
+    "flutter_unit_widget_pass": 142,
+    "flutter_analyze": "no issues",
+    "backend_directed_pass": 37,
+    "local_android_tenants": ["urbanstyle", "modaexpress"],
+    "local_confirmed_cash_operations_per_tenant": 2,
+    "local_price_conflict": "CONFLICTO without sale",
+    "local_stock_conflict": "RECHAZADA_POR_STOCK without sale",
+    "remote_android_tenant": "modaexpress",
+    "remote_operation_uuid": "8513b2a5-ad83-48bc-b7ea-13bc52dba783",
+    "remote_receipt": "VTA-OFF-20261109-9C0BB6",
+    "remote_sale_id": "49b07859-2713-4394-a1cd-938f6ae8eb93",
+    "remote_stock_delta": -1,
+    "physical_phone": "not tested"
+  }
+}

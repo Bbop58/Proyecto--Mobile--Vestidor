@@ -23,7 +23,7 @@ void main() {
     await old.insert('local_wallet',{'user_id':'user','saldo':290,'nonce':4,'firma':'old-server-proof'});
     await old.insert('favorite_mutations',{'product_id':'favorite-old','desired':1});await old.close();
     DatabaseHelper.activateScope(owner);final helper=DatabaseHelper.instance.forScope(owner);
-    final db=await helper.database;expect(await db.getVersion(),7);
+    final db=await helper.database;expect(await db.getVersion(),8);
     expect((await db.query('local_wallet')).single['saldo'],290);
     expect((await db.query('local_wallet')).single['nonce'],4);
     expect((await db.query('favorite_mutations')).single['product_id'],'favorite-old');

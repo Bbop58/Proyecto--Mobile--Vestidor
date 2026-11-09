@@ -62,6 +62,12 @@ Map<String, dynamic> sessionProfile(Map<String, dynamic> value) {
     throw const FormatException('Invalid mobile identity');
   }
   final capabilities = value['subscription_capabilities'];
+  final permissions = value['permissions'];
+  if (permissions != null &&
+      (permissions is! List ||
+          permissions.any((permission) => permission is! String || permission.trim().isEmpty))) {
+    throw const FormatException('Invalid mobile permissions');
+  }
   if (capabilities != null &&
       (capabilities is! Map || capabilities.values.any((v) => v is! bool))) {
     throw const FormatException('Invalid mobile capabilities');
@@ -80,6 +86,9 @@ Map<String, dynamic> sessionProfile(Map<String, dynamic> value) {
     'subscription_capabilities': Map<String, bool>.unmodifiable(
       Map<String, dynamic>.from(capabilities as Map? ?? {})
           .map((k, v) => MapEntry(k, v == true)),
+    ),
+    'permissions': List<String>.unmodifiable(
+      (permissions as List? ?? const []).cast<String>(),
     ),
   });
 }

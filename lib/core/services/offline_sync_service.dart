@@ -10,6 +10,7 @@ import '../../services/wallet_service.dart';
 import '../database/database_helper.dart';
 import 'connectivity_service.dart';
 import 'offline_authorization_service.dart';
+import '../../models/user.dart';
 
 class OfflineSyncService extends ChangeNotifier {
   final ApiService _apiService;
@@ -82,6 +83,7 @@ class OfflineSyncService extends ChangeNotifier {
 
   /// Registra una venta de mostrador en contingencia offline
   Future<String> saveOfflineSale({
+    required String localRequestId,
     required String sucursalId,
     required List<Map<String, dynamic>> items,
     required double montoTotal,
@@ -96,33 +98,30 @@ class OfflineSyncService extends ChangeNotifier {
     if (scope == null) {
       throw StateError('Inicia sesión para registrar operaciones');
     }
-    final db = _db.forScope(scope);
-    final grant=await OfflineAuthorizationService(_apiService).take('SYNC',online:_connectivityService.isOnline);
-    final clientOpId = grant?['client_operation_id']?.toString() ?? _uuid.v4();
-    final now = DateTime.now().toUtc().toIso8601String();
-
-    final op = {
-      'client_operation_id': clientOpId,
-      'offline_authorization':grant?['authorization'],
-      'operation_type': 'VENTA_CONTADO_OFFLINE',
-      'sucursal_id': sucursalId,
-      'cajero_id': cajeroId ?? scope.split(':').last,
-      'cliente_id': clienteId,
-      'fecha_local': now,
-      'monto_total': montoTotal,
-      'monto_recibido': montoRecibido,
-      'cambio': cambio,
-      'metodo_pago': metodoPago,
-      'notas': notas ?? 'Venta registrada en contingencia móvil offline',
-      'items_json': jsonEncode(items),
-      'local_status': 'LOCAL_PENDIENTE',
-      'server_receipt': null,
-      'server_entity_id': null,
-      'error_detail': null,
-      'created_at': now,
-    };
-
-    await db.insertPendingOperation(op);
+    final profile=_apiService.sessionCoordinator?.profile;
+    if (profile==null) throw StateError('Revalida tu sesión para usar caja móvil');
+    final user=User.fromJson(profile);
+    if (scope!='${user.tenantId}:${user.id}' || user.canUseMobile==false ||
+        !user.isActive || user.serviceRestricted ||
+        user.subscriptionCapabilities['offline']!=true ||
+        !user.hasPermission('ventas.create') ||
+        (cajeroId!=null && cajeroId!=user.id) || clienteId!=null ||
+        metodoPago!='EFECTIVO' ||
+        notas!=null) {
+      throw StateError('La sesión o los datos no habilitan caja en efectivo');
+    }
+    int cents(double value) {
+      if (!value.isFinite || value<0 || (value*100-(value*100).round()).abs()>0.000001) {
+        throw const FormatException('Importe inválido');
+      }
+      return (value*100).round();
+    }
+    if (cents(cambio)!=cents(montoRecibido)-cents(montoTotal)) {
+      throw StateError('El cambio no coincide con el efectivo recibido');
+    }
+    final clientOpId=await _db.forScope(scope).saveAuthorizedCashOperation(
+      owner:scope,branchId:sucursalId,cashierId:user.id,localRequestId:localRequestId,
+      items:items,totalCents:cents(montoTotal),receivedCents:cents(montoRecibido));
     if (scope != DatabaseHelper.scope) throw StateError("La sesión cambió; operación conservada con su propietario");
     await refreshPendingCount();
 
@@ -266,6 +265,9 @@ class OfflineSyncService extends ChangeNotifier {
   }
 
   Future<void> retryRejected(Map<String,dynamic> op) async {
+    if (op['operation_type']=='VENTA_CONTADO_OFFLINE') {
+      throw StateError('La venta en efectivo rechazada requiere revisión; no se crea otro cobro');
+    }
     final scope = DatabaseHelper.scope;
     if (scope == null || !_connectivityService.isOnline) throw StateError('Conéctate para verificar la operación original');
     final response = await _apiService.getAuth('${ApiConfig.syncBatchUrl.replaceFirst('/batch','')}/operations/${op['client_operation_id']}');

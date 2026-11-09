@@ -5,6 +5,8 @@ class User {
   bool get canUseMobile => accessScope=='COMPANY' && !isPlatformAdmin;
   final bool serviceRestricted;
   final Map<String,bool> subscriptionCapabilities;
+  final List<String> permissions;
+  bool hasPermission(String code) => permissions.contains(code);
   final String id;
   final String? tenantId;
   final String email;
@@ -19,6 +21,7 @@ class User {
     this.isPlatformAdmin=false,
     this.serviceRestricted=false,
     this.subscriptionCapabilities=const {},
+    this.permissions=const [],
     this.tenantId,
     required this.email,
     required this.fullName,
@@ -34,6 +37,9 @@ class User {
       isPlatformAdmin:json['is_platform_admin']==true,
       serviceRestricted:json['service_restricted']==true,
       subscriptionCapabilities:Map<String,dynamic>.from(json['subscription_capabilities'] as Map? ?? {}).map((k,v)=>MapEntry(k,v==true)),
+      permissions: (json['permissions'] is List)
+          ? List<String>.unmodifiable((json['permissions'] as List).whereType<String>())
+          : const [],
       tenantId: json['tenant_id']?.toString(),
       email: json['email']?.toString() ?? '',
       fullName: json['full_name']?.toString() ?? '',
@@ -50,6 +56,7 @@ class User {
       'is_platform_admin':isPlatformAdmin,
       'service_restricted':serviceRestricted,
       'subscription_capabilities':subscriptionCapabilities,
+      'permissions':permissions,
       'tenant_id': tenantId,
       'email': email,
       'full_name': fullName,
@@ -73,6 +80,7 @@ class User {
       isPlatformAdmin:isPlatformAdmin,
       serviceRestricted:serviceRestricted,
       subscriptionCapabilities:subscriptionCapabilities,
+      permissions:permissions,
       tenantId: tenantId,
       email: email ?? this.email,
       fullName: fullName ?? this.fullName,

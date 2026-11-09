@@ -47,7 +47,7 @@ class _LoginScreenState extends State<LoginScreen>
     _animController.forward();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadTenants();
+      if (mounted) _loadTenants();
     });
 
     _emailController.addListener(_onEmailChanged);
@@ -67,6 +67,7 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _loadTenants() async {
+    if (!mounted) return;
     setState(() => _isLoadingTenants = true);
     try {
       final apiService = context.read<ApiService>();

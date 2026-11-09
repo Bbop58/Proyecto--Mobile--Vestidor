@@ -64,7 +64,7 @@ void main() {
       DatabaseHelper.activateScope(owner);
       final helper = DatabaseHelper.instance.forScope(owner);
       final db = await helper.database;
-      expect(await db.getVersion(), 7);
+      expect(await db.getVersion(), 8);
       expect((await helper.getLocalWallet('user'))!['server_validated'], 1);
       expect((await helper.getLocalWallet('user'))!['saldo'], 20);
       expect((await helper.getLocalWallet('user'))!['nonce'], 7);

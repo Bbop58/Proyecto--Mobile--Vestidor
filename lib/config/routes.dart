@@ -13,4 +13,5 @@ class AppRoutes {
   static const String chatbot = '/chatbot';
   static const String wallet = '/wallet';
   static const String favorites = '/favorites';
+  static const String cashSale = '/cash-sale';
 }

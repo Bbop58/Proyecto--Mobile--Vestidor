@@ -12,6 +12,7 @@ import '../notifications/notifications_screen.dart';
 import '../wallet/wallet_screen.dart';
 import '../../services/wallet_service.dart';
 import '../../core/services/connectivity_service.dart';
+import '../../services/cash_sale_service.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -596,6 +597,12 @@ class _HomeScreenState extends State<HomeScreen>
                               ),
                             ),
                             Divider(height: 1, indent: 56, color: border),
+                            if (CashSaleService.eligible(user)) ...[
+                              _buildActionTile(context:context,icon:Icons.point_of_sale,
+                                label:'Caja móvil',subtitle:'Venta en efectivo con preparación offline',
+                                onTap:()=>Navigator.pushNamed(context,AppRoutes.cashSale)),
+                              Divider(height:1,indent:56,color:border),
+                            ],
                             _buildActionTile(
                               context: context,
                               icon: Icons.cloud_sync_outlined,

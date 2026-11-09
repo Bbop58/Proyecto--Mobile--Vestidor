@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import '../../models/cash_snapshot.dart';
+import '../../models/mobile_session.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -35,13 +37,23 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
   }
 
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 8) {
+      await _createCashTables(db);
+      final columns = await db.rawQuery('PRAGMA table_info(pending_operations)');
+      if (columns.isNotEmpty && !columns.any((row) => row['name'] == 'local_request_id')) {
+        await db.execute('ALTER TABLE pending_operations ADD COLUMN local_request_id TEXT');
+      }
+      if (columns.isNotEmpty) {
+        await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_local_request_id ON pending_operations(local_request_id)');
+      }
+    }
     if(oldVersion<7) {
       await _createAuthorizationTables(db);
       for(final table in ['pending_operations','offline_wallet_orders']) {
@@ -110,6 +122,32 @@ class DatabaseHelper {
 
   Future<void> _createAuthorizationTables(Database db) async {
     await db.execute('CREATE TABLE IF NOT EXISTS offline_authorizations (client_operation_id TEXT PRIMARY KEY, channel TEXT NOT NULL, authorization TEXT NOT NULL, expires_at TEXT NOT NULL)');
+  }
+
+  Future<void> _createCashTables(Database db) async {
+    await db.execute('''CREATE TABLE IF NOT EXISTS cash_snapshots (
+      branch_id TEXT PRIMARY KEY,
+      owner TEXT NOT NULL,
+      prepared_at TEXT NOT NULL,
+      valid_until TEXT NOT NULL,
+      payload_json TEXT NOT NULL
+    )''');
+  }
+
+  Future<void> saveCashSnapshot(Map<String, dynamic> snapshot) async {
+    final db = await database;
+    await db.insert('cash_snapshots', snapshot, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<Map<String, dynamic>?> getCashSnapshot(String branchId) async {
+    final db = await database;
+    final rows = await db.query('cash_snapshots', where: 'branch_id=?', whereArgs: [branchId], limit: 1);
+    return rows.isEmpty ? null : Map<String, dynamic>.from(rows.single);
+  }
+
+  Future<List<Map<String,dynamic>>> listCashSnapshots() async {
+    final db=await database;
+    return db.query('cash_snapshots',orderBy:'prepared_at DESC');
   }
 
   Future<void> cacheAuthorizations(List<Map<String,dynamic>> grants) async {
@@ -232,6 +270,7 @@ class DatabaseHelper {
         client_operation_id TEXT PRIMARY KEY,
         offline_authorization TEXT,
         operation_type TEXT NOT NULL,
+        local_request_id TEXT,
         sucursal_id TEXT NOT NULL,
         cajero_id TEXT,
         cliente_id TEXT,
@@ -258,6 +297,8 @@ class DatabaseHelper {
     await _createWalletTables(db);
     await _createFavoriteTables(db);
     await _createAuthorizationTables(db);
+    await _createCashTables(db);
+    await db.execute('CREATE UNIQUE INDEX idx_pending_local_request_id ON pending_operations(local_request_id)');
   }
 
   // ── SUCURSALES ──
@@ -406,6 +447,119 @@ class DatabaseHelper {
       } else {
         await transaction.insert('pending_operations',op,conflictAlgorithm:ConflictAlgorithm.abort);
       }
+    });
+  }
+
+  /// Cash receipt and permit are committed together. A retry with the same
+  /// request identifier returns its original UUID without consuming stock again.
+  Future<String> saveAuthorizedCashOperation({required String owner,
+    required String branchId, required String cashierId,
+    required String localRequestId, required List<Map<String,dynamic>> items,
+    required int totalCents, required int receivedCents}) async {
+    if ((_fixedScope ?? scope) != owner || scope != owner ||
+        owner.split(':').length != 2 || owner.split(':')[1] != cashierId ||
+        branchId.isEmpty || localRequestId.isEmpty || items.isEmpty ||
+        totalCents < 0 || receivedCents < totalCents) {
+      throw StateError('Datos de caja o identidad inválidos');
+    }
+    final normalized=<Map<String,dynamic>>[];
+    final used=<String>{};
+    var calculated=0;
+    for (final item in items) {
+      final variant=item['variante_id']; final qty=item['cantidad'];
+      final price=item['precio_unitario'];
+      if (variant is! String || variant.isEmpty || !used.add(variant) ||
+          qty is! int || qty <= 0 || price is! num ||
+          !price.toDouble().isFinite || price < 0) {
+        throw const FormatException('Artículo o cantidad inválida');
+      }
+      final cents=(price.toDouble()*100).round();
+      if ((price.toDouble()*100-cents).abs()>0.000001) {
+        throw const FormatException('El precio tiene más de dos decimales');
+      }
+      calculated += cents*qty;
+      normalized.add({'variante_id':variant,'cantidad':qty,'precio_unitario':cents/100});
+    }
+    normalized.sort((a,b)=>(a['variante_id'] as String).compareTo(b['variante_id'] as String));
+    if (calculated != totalCents) throw StateError('El total no coincide con los artículos');
+    final encoded=jsonEncode(normalized);
+    final db=await database;
+    return db.transaction((tx) async {
+      if (scope != owner) throw StateError('La identidad cambió');
+      final previous=await tx.query('pending_operations',where:'local_request_id=?',
+        whereArgs:[localRequestId],limit:1);
+      if (previous.isNotEmpty) {
+        final row=previous.single;
+        if (row['operation_type']!='VENTA_CONTADO_OFFLINE' ||
+            row['sucursal_id']!=branchId || row['cajero_id']!=cashierId ||
+            row['items_json']!=encoded || row['monto_total']!=totalCents/100 ||
+            row['monto_recibido']!=receivedCents/100) {
+          throw StateError('La solicitud ya pertenece a otra venta');
+        }
+        return row['client_operation_id'] as String;
+      }
+      final rows=await tx.query('cash_snapshots',where:'branch_id=?',whereArgs:[branchId],limit:1);
+      if (rows.isEmpty || rows.single['owner']!=owner) throw StateError('Prepara la caja con conexión');
+      final snapshot=CashSnapshot.fromRow(rows.single);
+      final now=DateTime.now().toUtc();
+      if (!snapshot.isValid || snapshot.preparedAt.isAfter(now) ||
+          snapshot.validUntil.isAfter(snapshot.preparedAt.add(const Duration(hours:24)))) {
+        throw StateError('La preparación de caja venció');
+      }
+      final stock={for (final row in snapshot.availability) row['variante_id']:row};
+      final pending=await tx.query('pending_operations',
+        where:"sucursal_id=? AND local_status IN ('LOCAL_PENDIENTE','CONFIRMADA','REINTENTAR') AND created_at>=?",
+        whereArgs:[branchId,snapshot.preparedAt.toIso8601String()]);
+      final reserved=<String,int>{};
+      for (final row in pending) {
+        final saved=jsonDecode(row['items_json'] as String);
+        if (saved is! List) continue;
+        for (final item in saved) {
+          if (item is Map && item['variante_id'] is String && item['cantidad'] is int) {
+            final id=item['variante_id'] as String;
+            reserved[id]=(reserved[id] ?? 0)+(item['cantidad'] as int);
+          }
+        }
+      }
+      for (final item in normalized) {
+        final id=item['variante_id'] as String;
+        final available=stock[id];
+        if (available==null || available['stock_disponible'] is! int ||
+            (available['stock_disponible'] as int)-(reserved[id] ?? 0)<(item['cantidad'] as int) ||
+            available['precio'] is! num ||
+            ((available['precio'] as num).toDouble()*100).round()!=
+              ((item['precio_unitario'] as num).toDouble()*100).round()) {
+          throw StateError('Stock o precio no comprobado para esta variante');
+        }
+      }
+      final grants=await tx.query('offline_authorizations',where:'channel=?',whereArgs:['SYNC']);
+      Map<String,dynamic>? chosen;
+      for (final grant in grants) {
+        final claims=accessClaims(grant['authorization']?.toString());
+        final expiry=DateTime.tryParse(grant['expires_at']?.toString() ?? '')?.toUtc();
+        if (expiry==null || !expiry.isAfter(now) || claims==null ||
+            claims['purpose']!='OFFLINE_ENTITLEMENT' ||
+            claims['tenant_id']!=owner.split(':')[0] || claims['actor_id']!=cashierId ||
+            claims['operation_id']!=grant['client_operation_id'] || claims['channel']!='SYNC' ||
+            claims['kinds'] is! List ||
+            !(claims['kinds'] as List).contains('VENTA_CONTADO_OFFLINE') ||
+            claims['exp'] is! num ||
+            (claims['exp'] as num).toInt()<=now.millisecondsSinceEpoch~/1000) { continue; }
+        chosen=Map<String,dynamic>.from(grant); break;
+      }
+      if (chosen==null) throw StateError('No hay concesión de caja vigente');
+      final id=chosen['client_operation_id'] as String;
+      final timestamp=now.toIso8601String();
+      await tx.insert('pending_operations',{'client_operation_id':id,
+        'offline_authorization':chosen['authorization'],
+        'operation_type':'VENTA_CONTADO_OFFLINE','local_request_id':localRequestId,
+        'sucursal_id':branchId,'cajero_id':cashierId,'fecha_local':timestamp,
+        'monto_total':totalCents/100,'monto_recibido':receivedCents/100,
+        'cambio':(receivedCents-totalCents)/100,'metodo_pago':'EFECTIVO',
+        'items_json':encoded,'local_status':'LOCAL_PENDIENTE','created_at':timestamp});
+      await tx.delete('offline_authorizations',where:'client_operation_id=?',whereArgs:[id]);
+      if (scope != owner) throw StateError('La identidad cambió');
+      return id;
     });
   }
 

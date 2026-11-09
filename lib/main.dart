@@ -45,6 +45,7 @@ import 'services/wallet_service.dart';
 import 'screens/wallet/wallet_screen.dart';
 import 'services/favorite_service.dart';
 import 'screens/shop/favorites_screen.dart';
+import 'screens/sales/cash_sale_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -206,6 +207,7 @@ class MyApp extends StatelessWidget {
               AppRoutes.chatbot: (context) => const ChatbotScreen(),
               AppRoutes.wallet: (context) => const WalletScreen(),
               AppRoutes.favorites: (context) => const FavoritesScreen(),
+              AppRoutes.cashSale: (context) => const CashSaleScreen(),
             },
           );
         },
