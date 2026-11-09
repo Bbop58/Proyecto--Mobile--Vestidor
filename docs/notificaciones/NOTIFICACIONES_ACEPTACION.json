@@ -41,15 +41,15 @@
   "android": {
     "normal_initial_storage_retry_required": true,
     "background_delivery": "PASS",
-    "strict_tap": "PENDING",
+    "strict_tap": "PHYSICAL_USER_CONFIRMED_BOTH_COMPANIES",
     "urban_websocket_registration": "PASS",
-    "apk_release_delivered": false,
-    "status": "IN_PROGRESS",
+    "apk_release_delivered": true,
+    "status": "BASIC_ACCEPTANCE_PASS",
     "storage_isolation_native": "PASS",
     "local_regression_passed": 148,
     "analyze": "PASS_NO_ISSUES",
     "debug_apk_sha256": "8f34ab1f90732d94e8ad097fbe4e389749f9eeba836948e6b3967c4592ea0390",
-    "environment": "Both owned AVDs showed Android System UI/Bluetooth failures. Release x64 installed successfully; physical ARM64 acceptance pending.",
+    "environment": "Both owned AVDs stopped after System UI/Bluetooth failures; final acceptance confirmed by user on physical phone.",
     "release_candidates": [
       {
         "file": "C:\\Users\\Laptop\\FashionStore-recuperado\\mobile\\build\\app\\outputs\\flutter-apk\\app-x86_64-release.apk",
@@ -64,8 +64,31 @@
     ],
     "release_build": "PASS_1584.4_SECONDS",
     "delivered_test_apk": "C:/Users/Laptop/Downloads/FashionStore-Notificaciones-Prueba-1.0.3-4-arm64.apk",
-    "awaiting": "User installs ARM64 APK, activates notifications, and confirms readiness before sending the next event."
+    "awaiting": "None for the basic notification acceptance requested by the user.",
+    "physical_urbanstyle": {
+      "activated": true,
+      "tap_opened_notifications": true,
+      "evidence": "User confirmed physical phone",
+      "checked_at": "2026-11-09T16:23:43.7973346-04:00",
+      "notification_received": true
+    },
+    "physical_modaexpress": {
+      "evidence": "User confirmed physical phone",
+      "session_retained_after_removing_and_reopening_app": true,
+      "tap_opened_notifications": true,
+      "activated": true,
+      "checked_at": "2026-11-09T16:26:55.0882565-04:00",
+      "notification_received": true
+    },
+    "final_apk": "C:/Users/Laptop/Downloads/FashionStore-Notificaciones-1.0.3+4.apk"
   },
-  "status": "IN_PROGRESS",
-  "phase": "C2"
+  "status": "COMPLETE_BASIC_NOTIFICATION_SCOPE",
+  "phase": "C2",
+  "limits": [
+    "No new physical-phone reboot certification.",
+    "Offline/permission/revocation edge cases retain automated test evidence; no claim that every case was repeated on the physical phone.",
+    "Original emulator tap false positive was invalidated; physical confirmations are the final Android evidence."
+  ],
+  "C3": "PASS_REGRESSION_ANALYZE_RELEASE_BUILD",
+  "C4": "PUBLISHED_AND_DELIVERED_BASIC_ACCEPTANCE_PASS"
 }

@@ -1,5 +1,7 @@
 # Notificaciones push y WebSocket — plan de cierre
 
+> **Cierre operativo básico —9/11/2026:** el usuario priorizó terminar de forma rápida y sencilla. C1 implementada/publicada; C2 aceptada en web y en teléfono para ambas empresas; C3 regresión/build aprobados; C4 código publicado y APK probada entregada. Ver NOTIFICACIONES_C2_CIERRE.md, NOTIFICACIONES_C3_C4_CIERRE.md y NOTIFICACIONES_ACEPTACION.json en docs/auditoria_software. La lista extensa inferior se conserva como diseño histórico: los casos avanzados no repetidos físicamente están identificados en el cierre y no se declaran certificados. No preparar más entornos ni iniciar otra ampliación automáticamente.
+
 > **Cambio autorizado posterior:** seguir NOTIFICACIONES_PUBLICACION_WEB.md para publicar/aceptar primero el candidato backend/web en HTTPS real. Android y el cierre global quedan pendientes; este cambio de orden sustituye la espera de publicación conjunta para este candidato.
 
 > Ejecución nativa por tareas y checkboxes, sin subagentes. Aplicar writing-plans y systematic-debugging ante fallos; angular-developer para cambios Angular. No depender de skills ausentes. Este turno solo prepara el plan; se conserva la autorización previa de pruebas y publicación para ejecutarlo.
