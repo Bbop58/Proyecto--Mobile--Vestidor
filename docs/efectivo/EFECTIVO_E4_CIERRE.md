@@ -20,3 +20,7 @@
 Se probó en un emulador Android propio; falta la aceptación manual en un teléfono físico. La APK release se firma con la configuración debug actual del proyecto, apta para esta demostración, no para distribución en una tienda. La preparación offline caduca y el servidor vuelve a validar permiso, precio y existencias; si otro equipo vende la misma prenda mientras está desconectado, el conflicto queda pendiente de revisión y no se inventa una venta central. No se ejecutaron pagos PayPal ni se modificó la billetera. La operación remota demo queda en Railway hasta el siguiente reinicio de la base demo, conforme al acuerdo del proyecto.
 
 La matriz está en `EFECTIVO_E4_MATRIZ.md`; el hash y la ruta de la APK están en `EFECTIVO_ARTEFACTOS.json`. El manual para el cajero y el contexto E1–E4 se copian al repositorio móvil.
+
+## Publicación
+
+El código de la app se envió a `main` del repositorio móvil en el commit `68be235`, con la preferencia GitHub `D-blip-max` configurada. Backend y web quedaron sin cambios. La APK `1.0.3+4` que apunta a Railway se copió a `C:/Users/Laptop/Downloads/FashionStore-Efectivo-Offline-1.0.3+4.apk`; su copia coincide byte a byte por SHA-256 con la compilación. No se creó un GitHub Release porque esta instalación no dispone del cliente `gh` ni del complemento GitHub. El archivo sí está disponible en Descargas de esta computadora.

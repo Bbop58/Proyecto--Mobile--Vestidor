@@ -1,8 +1,8 @@
 {
   "date_bolivia": "2026-11-09",
   "scope": "Flutter cash POS offline E1-E4",
-  "mobile_commit": null,
-  "mobile_commit_note": "See repository main after push; the APK was compiled from these sources before commit",
+  "mobile_implementation_commit": "68be235",
+  "mobile_commit_note": "APK compiled from the implementation sources; the documentation closure may use a later commit",
   "backend_commit_unchanged": "f635346",
   "web_commit_unchanged": "59188ba",
   "github_push_identity": "D-blip-max",

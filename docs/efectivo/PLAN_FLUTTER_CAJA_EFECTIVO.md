@@ -95,10 +95,10 @@ Corrección del diagnóstico previo: take(channel,online:false) ya rechaza grant
 - [x] Reenvío del mismo UUID local y remoto, concurrencia backend y bloqueo de doble envío por UI; respuesta perdida representada por replay tras commit. Precio alterado y stock agotado rechazados por API+PG sin venta. Identidad, autorización e aislamiento cubiertos por suite dirigida; no se ensayó físicamente el doble toque de pantalla.
 - [x] Suite Flutter completa 142, análisis estático y APK. Suite dirigida backend 37. Regresiones de billetera/reserva/sesión incluidas; prueba SQLite verifica saldo/nonce sin cambios por efectivo.
 - [x] PostgreSQL por UUID/empresa/sucursal, importes, efectivo/cambio, detalle, stock y movimientos; Railway por recibo/entidad/stock. Evidencias sin credenciales.
-- [ ] Revisar diffs y credenciales; copiar plan/spec/informes/manual a mobile/docs/efectivo para que sobrevivan la raíz sinGit. Commit/push conD-blip-max únicamente repos modificados; sin push backend por cambios soloFlutter.
-- [ ] Generar APK release apuntando al API realRailway y etiquetarhash/commit/API de destino. Publicar APK en release del repo móvil si disponible y autorizado (autorización general vigente); no prometer descarga desde un archivo local inaccesible.
+- [x] Diffs y credenciales revisados; plan/spec/informes/manual copiados a mobile/docs/efectivo. Commit móvil `68be235` y push a main con preferencia GitHub D-blip-max; backend/web sin push ni cambios.
+- [x] APK release `1.0.3+4` apuntando a Railway, hash y commit anotados, copia comprobada en Descargas. GitHub Release no disponible sin `gh`/complemento GitHub; se entrega la copia local accesible en esta computadora.
 - [x] Railway con ModaExpress demo: nueva venta offline, cierre/reapertura Android, sincronización/replay, consulta de entidad y decremento de stock. Sin reset ni despliegue backend durante el recorrido.
-- [ ] Cerrar E4 solo con evidencia real; indicar lo no probado en teléfono físico y alcance de emulador. Limpiar servicios/AVDQA propios conservando archivos del usuario. No avanzar automáticamente al alta de empresas, que tiene plan separado.
+- [x] E4 cerrada con evidencia real en API, PostgreSQL, AVD y Railway; teléfono físico y doble toque físico no certificados. Servicios/AVD QA propios detenidos al cierre; archivos del usuario conservados. Alta de empresas queda en su plan separado.
 
 ## Comandos de referencia
 
@@ -108,4 +108,4 @@ Comprobar ApiConfig actual y opciones de integration_test antes de fijar comando
 
 ## Estado
 
-E1–E3 completas localmente el 9/11/2026 y E4 aceptada en AVD, PostgreSQL y Railway. La publicación móvil, el hash final y la limpieza de servicios QA se registran en `EFECTIVO_E4_CIERRE.md` y `EFECTIVO_ARTEFACTOS.json`. Teléfono físico y doble toque físico no certificados.
+E1–E4 completas el 9/11/2026; móvil publicado en `68be235`, APK release `1.0.3+4` en Descargas. Ver `EFECTIVO_E4_CIERRE.md`, matriz y artefactos. Teléfono físico y doble toque físico no certificados.
