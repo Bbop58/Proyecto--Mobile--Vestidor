@@ -55,6 +55,7 @@ class ApiService {
     bool optional = false,
     Duration? timeout,
     String? expectedScope,
+    bool binary = false,
   }) async {
     final scope = expectedScope ?? DatabaseHelper.scope;
     final coordinator = _sessions;
@@ -94,7 +95,7 @@ class ApiService {
           ..followRedirects = false;
         request.headers.addAll({
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          'Accept': binary ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/json',
           if (access != null) 'Authorization': 'Bearer $access',
         });
         if (body != null) request.body = jsonEncode(body);
@@ -125,7 +126,7 @@ class ApiService {
           );
         }
       }
-      return _handleResponse(response);
+      return _handleResponse(response, binary: binary);
     } on SessionFailure catch (error) {
       if (!current()) return changed();
       return ApiResponse(
@@ -198,6 +199,10 @@ class ApiService {
     timeout: timeout,
     expectedScope: expectedScope,
   );
+  Future<ApiResponse> postAuthBinary(
+    String url, Map<String, dynamic> body, {String? expectedScope}
+  ) => _request('POST', url, body: body, expectedScope: expectedScope,
+    binary: true, timeout: const Duration(seconds: 30));
   Future<ApiResponse> putAuth(String url, Map<String, dynamic> body) =>
       _request('PUT', url, body: body);
   Future<ApiResponse> deleteAuth(String url) => _request('DELETE', url);
@@ -221,7 +226,7 @@ class ApiService {
     }
   }
 
-  ApiResponse _handleResponse(http.Response response) {
+  ApiResponse _handleResponse(http.Response response, {bool binary = false}) {
     dynamic data;
     try {
       data = jsonDecode(utf8.decode(response.bodyBytes));
@@ -232,7 +237,7 @@ class ApiService {
       return ApiResponse(
         success: true,
         statusCode: response.statusCode,
-        data: data,
+        data: binary ? response.bodyBytes : data,
       );
     }
     final detail = data is Map ? data['detail'] : null;

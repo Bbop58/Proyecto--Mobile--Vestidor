@@ -7,6 +7,8 @@ class User {
   final Map<String,bool> subscriptionCapabilities;
   final List<String> permissions;
   bool hasPermission(String code) => permissions.contains(code);
+  bool get canViewVoiceReports => canUseMobile && !serviceRestricted &&
+      hasPermission('ventas.reports') && subscriptionCapabilities['reportes_ia'] == true;
   final String id;
   final String? tenantId;
   final String email;

@@ -61,6 +61,8 @@ class ApiConfig {
 
   // Chatbot Inteligente con IA (Gemini Flash)
   static String get chatbotMessageUrl => '$apiUrl/chatbot/message';
+  static String get voiceReportQueryUrl => '$apiUrl/reportes-voz/query';
+  static String get voiceReportExcelUrl => '$apiUrl/reportes-voz/export-excel';
 
   // Wallet Endpoints (Plan 14 - Fondos Offline y Prepago)
   static String get walletMeUrl => '$apiUrl/wallet/me';

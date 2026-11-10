@@ -12,6 +12,7 @@ import '../notifications/notifications_screen.dart';
 import '../wallet/wallet_screen.dart';
 import '../../services/wallet_service.dart';
 import '../../core/services/connectivity_service.dart';
+import '../reports/voice_reports_screen.dart';
 import '../../services/cash_sale_service.dart';
 
 
@@ -519,6 +520,17 @@ class _HomeScreenState extends State<HomeScreen>
                         decoration: AppTheme.cardDecorationOf(context),
                         child: Column(
                           children: [
+                            if (user.canViewVoiceReports) ...[
+                              _buildActionTile(
+                                context: context,
+                                icon: Icons.record_voice_over_outlined,
+                                label: 'Reportes por voz',
+                                subtitle: 'Consulta, escucha y descarga reportes',
+                                onTap: () => Navigator.push(context,
+                                  MaterialPageRoute(builder: (_) => const VoiceReportsScreen())),
+                              ),
+                              Divider(height: 1, indent: 56, color: border),
+                            ],
                             Consumer<WalletService>(
                               builder: (context, ws, _) {
                                 final s = ws.saldo;
