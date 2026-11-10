@@ -63,6 +63,7 @@ class ApiConfig {
   static String get chatbotMessageUrl => '$apiUrl/chatbot/message';
   static String get voiceReportQueryUrl => '$apiUrl/reportes-voz/query';
   static String get voiceReportExcelUrl => '$apiUrl/reportes-voz/export-excel';
+  static String get voiceReportEmailUrl => '$apiUrl/reportes-voz/email';
 
   // Wallet Endpoints (Plan 14 - Fondos Offline y Prepago)
   static String get walletMeUrl => '$apiUrl/wallet/me';

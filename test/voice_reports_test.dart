@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/config/api_config.dart';
+import 'package:mobile/core/database/database_helper.dart';
+import 'package:mobile/models/voice_report.dart';
 import 'package:mobile/models/user.dart';
 import 'package:mobile/services/api_service.dart';
 import 'package:mobile/services/storage_service.dart';
@@ -11,6 +13,7 @@ import 'package:mobile/services/voice_report_service.dart';
 class ReportApi extends ApiService {
   String? lastUrl;
   Map<String, dynamic>? lastBody;
+  String? lastGetUrl;
   ReportApi() : super(StorageService());
 
   @override
@@ -22,6 +25,12 @@ class ReportApi extends ApiService {
   ]) async {
     lastUrl = url;
     lastBody = body;
+    if(url==ApiConfig.voiceReportEmailUrl){
+      return ApiResponse(success:true,statusCode:200,data:{
+        'operation_id':body?['operation_id'],'status':'ACCEPTED',
+        'recipient':body?['recipient'],'message':'Reporte aceptado para envío.',
+      });
+    }
     return ApiResponse(
       success: true,
       statusCode: 200,
@@ -51,10 +60,17 @@ class ReportApi extends ApiService {
       data: Uint8List.fromList([0x50, 0x4b, 3, 4]),
     );
   }
+
+  @override
+  Future<ApiResponse> getAuth(String url) async {
+    lastGetUrl=url;
+    return ApiResponse(success:true,statusCode:200,data:{'email_enabled':true});
+  }
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  tearDown(()=>DatabaseHelper.activateScope(null));
   test('reports access requires both permission and active benefit', () {
     User user(List<String> perms, bool enabled) => User.fromJson({
       'id': '1',
@@ -89,4 +105,21 @@ void main() {
       expect(api.lastBody?['filas'], report.rows);
     },
   );
+
+  test('report email checks the shared capability and sends the same snapshot once requested',() async {
+    DatabaseHelper.activateScope('tenant-a:user-a');
+    final api=ReportApi();
+    final service=VoiceReportExportService(api);
+    final report=VoiceReport(question:'Ventas por sucursal',interpretation:'Resumen',spokenSummary:'',
+      columns:['sucursal','total'],rows:[{'sucursal':'Central','total':20}]);
+    expect(await service.emailEnabled(),isTrue);
+    expect(api.lastGetUrl,'${ApiConfig.apiUrl}/receipts/capabilities');
+    final result=await service.emailReport(report,'admin@example.com','attempt-123');
+    expect(result['status'],'ACCEPTED');
+    expect(api.lastUrl,ApiConfig.voiceReportEmailUrl);
+    expect(api.lastBody,{
+      'recipient':'admin@example.com','operation_id':'attempt-123','pregunta':report.question,
+      'interpretacion':report.interpretation,'columnas':report.columns,'filas':report.rows,
+    });
+  });
 }

@@ -1,6 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
+import '../../core/database/database_helper.dart';
+import '../../core/services/connectivity_service.dart';
+import '../../models/mobile_session.dart';
 import '../../models/voice_report.dart';
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
@@ -23,7 +29,8 @@ class _VoiceReportsScreenState extends State<VoiceReportsScreen> {
   String? _reportOwner;
   String? _reportTenant;
   String? _error;
-  bool _busy = false, _exporting = false, _listening = false;
+  bool _busy = false, _exporting = false, _listening = false, _emailSending = false;
+  String? _emailOperationId, _emailAttemptRecipient, _emailReportKey;
 
   @override
   void didChangeDependencies() {
@@ -90,6 +97,7 @@ class _VoiceReportsScreenState extends State<VoiceReportsScreen> {
       _report = null;
       _reportOwner = null;
       _reportTenant = null;
+      _emailOperationId=null;_emailAttemptRecipient=null;_emailReportKey=null;
     });
     try {
       final report = await VoiceReportService(context.read<ApiService>())
@@ -144,6 +152,58 @@ class _VoiceReportsScreenState extends State<VoiceReportsScreen> {
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
+  }
+
+  Future<void> _emailReport(VoiceReport report) async {
+    if(_emailSending||_exporting)return;
+    final auth=context.read<AuthService>();
+    final user=auth.currentUser;
+    final owner=user?.id,tenant=user?.tenantId,scope=DatabaseHelper.scope;
+    if(user?.canViewVoiceReports!=true||owner!=_reportOwner||tenant!=_reportTenant||scope==null)return;
+    final connection=context.read<ConnectivityService>();
+    if(!connection.isOnline||auth.sessionState!=SessionState.online){
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Conéctate y revalida tu sesión para enviar el reporte.')));return;
+    }
+    final service=VoiceReportExportService(context.read<ApiService>());
+    try{
+      if(!await service.emailEnabled()){
+        if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('El correo no está disponible ahora. Puedes guardar el PDF o Excel.')));
+        return;
+      }
+    }catch(error){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(error is FormatException?error.message:'No se pudo consultar el servicio de correo.')));
+      return;
+    }
+    if(!mounted||auth.currentUser?.id!=owner||auth.currentUser?.tenantId!=tenant||DatabaseHelper.scope!=scope)return;
+    final controller=TextEditingController(text:user!.email);
+    final formKey=GlobalKey<FormState>();
+    final recipient=await showDialog<String>(context:context,builder:(dialogContext)=>AlertDialog(
+      title:const Text('Enviar reporte por correo'),
+      content:Form(key:formKey,child:TextFormField(
+        controller:controller,keyboardType:TextInputType.emailAddress,maxLength:254,autofocus:true,
+        decoration:const InputDecoration(labelText:'Correo destinatario',border:OutlineInputBorder()),
+        validator:(value)=>RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch((value??'').trim())?null:'Escribe un correo válido.',
+      )),
+      actions:[TextButton(onPressed:()=>Navigator.pop(dialogContext),child:const Text('Cancelar')),
+        FilledButton(onPressed:()=>formKey.currentState?.validate()==true?Navigator.pop(dialogContext,controller.text.trim()):null,
+          child:const Text('Confirmar envío'))],
+    ));
+    Future<void>.delayed(const Duration(milliseconds:350),controller.dispose);
+    if(recipient==null||!mounted||auth.currentUser?.id!=owner||auth.currentUser?.tenantId!=tenant||DatabaseHelper.scope!=scope)return;
+    final reportKey=jsonEncode([report.question,report.interpretation,report.columns,report.rows]);
+    if(_emailOperationId==null||_emailAttemptRecipient!=recipient||_emailReportKey!=reportKey){
+      _emailOperationId=const Uuid().v4();_emailAttemptRecipient=recipient;_emailReportKey=reportKey;
+    }
+    setState(()=>_emailSending=true);
+    try{
+      final result=await service.emailReport(report,recipient,_emailOperationId!);
+      if(!mounted||auth.currentUser?.id!=owner||auth.currentUser?.tenantId!=tenant||DatabaseHelper.scope!=scope)return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(result['message']?.toString()??'Consulta el estado del envío.')));
+    }catch(error){
+      if(mounted&&auth.currentUser?.id==owner&&auth.currentUser?.tenantId==tenant&&DatabaseHelper.scope==scope){
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(error is FormatException?error.message:'No se confirmó el envío. Revisa tu correo antes de reintentar.')));
+      }
+    }finally{if(mounted)setState(()=>_emailSending=false);}
   }
 
   @override
@@ -271,6 +331,11 @@ class _VoiceReportsScreenState extends State<VoiceReportsScreen> {
                         onPressed: _exporting ? null : () => _export(false),
                         icon: const Icon(Icons.table_view_outlined),
                         label: const Text('Guardar Excel'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _exporting||_emailSending ? null : () => _emailReport(report),
+                        icon: Icon(_emailSending?Icons.hourglass_top:Icons.email_outlined),
+                        label: Text(_emailSending?'Enviando…':'Enviar por correo'),
                       ),
                     ],
                   ),

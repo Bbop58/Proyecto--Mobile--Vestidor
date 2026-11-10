@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 
 import '../config/api_config.dart';
+import '../core/database/database_helper.dart';
 import '../models/voice_report.dart';
 import 'api_service.dart';
 
@@ -67,6 +68,23 @@ class VoiceReportExportService {
       throw const FormatException('El Excel recibido no es válido.');
     }
     return bytes;
+  }
+
+  Future<bool> emailEnabled() async {
+    final response=await api.getAuth('${ApiConfig.apiUrl}/receipts/capabilities');
+    if(!response.success)throw FormatException(response.error??'No se pudo consultar el servicio de correo.');
+    return response.data?['email_enabled']==true;
+  }
+
+  Future<Map<String,dynamic>> emailReport(VoiceReport report,String recipient,String operationId) async {
+    final owner=DatabaseHelper.scope;
+    if(owner==null)throw StateError('Inicia sesión para enviar el reporte.');
+    final response=await api.postAuth(ApiConfig.voiceReportEmailUrl,{
+      'recipient':recipient,'operation_id':operationId,'pregunta':report.question,
+      'interpretacion':report.interpretation,'columnas':report.columns,'filas':report.rows,
+    },const Duration(seconds:60),owner);
+    if(!response.success)throw FormatException(response.error??'No se confirmó el envío. Revisa tu correo antes de reintentar.');
+    return Map<String,dynamic>.from(response.data as Map);
   }
 
   Future<void> share(Uint8List bytes, String extension, String mime) async {
